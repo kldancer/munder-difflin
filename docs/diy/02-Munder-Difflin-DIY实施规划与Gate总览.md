@@ -53,7 +53,7 @@ Main 配置与 locale 事实
 4. Auto Mode、遥测、公网入口默认关闭；破坏性 bypass 只能由用户显式开启。
 5. Agent 修改真实项目时必须可观察、可停止，并保留 Git/Worktree 保护。
 6. 不读取、记录或提交 API Key、访问令牌、认证目录和真实 Prompt/Output 中的敏感信息。
-7. 商业发布前必须替换受限像素素材或取得对应授权。
+7. 本 DIY 限定为个人非商业自用；商业授权、签名、公证、上架和对外分发不进入当前 Gate。保留原有许可/归属文件，不单独对外分发受限素材。
 
 ### 2.5 非目标
 
@@ -111,7 +111,7 @@ lsof -nP -iTCP:5173 -sTCP:LISTEN || true
 2. 按本文 DAG 拓扑顺序选择，而不是按文件多少或视觉吸引力选择；
 3. 优先选择能建立后续共同基线、形成最短可证伪反馈环的关键包；
 4. “代码写完”不等于完成，必须有适用验证、运行事实和 `.work` 收据；
-5. 如果首包需要新产品选择、凭据、付费调用、真实公网或许可证法律判断，保持 `阻塞` 并回交用户。
+5. 如果首包需要新产品选择、凭据、付费调用或真实公网，保持 `阻塞` 并回交用户；商业化不是当前工作包。
 
 当前首个未完成关键工作包：`W0.1 Node 22 与工作区/收据基线`。
 
@@ -128,13 +128,13 @@ flowchart LR
   L10 --> G2{G2 中文 Codex 黄金场景}
   L20 --> G2
 
-  G2 --> L30[W3 官方 Gemini CLI]
+  G2 --> L30[W3 Gemini + DeepSeek Provider]
   G2 --> L40[W4 中文角色与协作模板]
   L30 --> G4{G4 混合模型办公室}
   L40 --> G4
 
-  G4 --> L50[W5 安全/依赖/供应链/许可]
-  L50 --> G5{G5 产品可分发 Gate}
+  G4 --> L50[W5 个人自用安全与维护]
+  L50 --> G5{G5 个人长期运行 Gate}
   G5 --> L60[W6 选择性增强]
 ```
 
@@ -143,8 +143,8 @@ flowchart LR
 - `G0` 通过后，W1 中文 UI 与 W2 Codex 运行时可以并行；
 - W1 内只有写集合不重叠的页面包可以并行；共享 i18n、配置、通用组件由主会话串行持有；
 - W2 中 `codexRemote/index` 与 W1 Renderer 页面迁移可并行；`agentProvider/config/useHive` 等共享合同由单一 owner 修改；
-- W3 必须等待中文 Codex 黄金场景通过，不在共享 Provider 合同仍变动时抢写；
-- W5 的公网、Skills、依赖和资产许可仅在写集合和验证反馈环真正独立时并行。
+- W3 必须等待中文 Codex 黄金场景通过；Gemini 与 DeepSeek 可并行做只读合同取证，但共享 `AgentProvider/config/hive/useHive` 只能由单一 owner 串行集成；
+- W5 的依赖、外部入口和 Skills 仅在写集合与验证反馈环真正独立时并行；不拆分商业授权或发行 Lane。
 
 ## 6. 会话协同规范
 
@@ -177,8 +177,8 @@ flowchart LR
 | `W0.1~W0.3` | 只读核验可独立；实现不拆 | `0~1` | `.gitignore`、package/lock、Main config、i18n 事实层 | `G0` |
 | `G0` 后的 W1/W2 | W1 页面包按互斥文件拆分；W2 runtime 为另一证据/写域 | `2~3` | shared i18n、Provider/config、真实 Electron/CLI 运行 | `G1` 与 W2 各包 |
 | `G2` 中文 Codex Gate | 可建 1 个只读复核会话 | `0~1` | 测试仓库、PTY、Harness、浏览器、Worktree 和运行收据 | `G2` 单 owner 验收 |
-| `W3/W4` | Gemini 合同、中文角色模板可并行 | `2` | `agentProvider/hive/useHive` 集成与混合模型运行 | `G3/G4` |
-| `W5` | 依赖、公网入口、Skills、资产许可为独立证据域 | `2~3` | Builder、签名、公证、真实公网和发行决策 | `G5` |
+| `W3/W4` | Gemini 合同、DeepSeek 路由取证、中文角色模板可并行 | `2~3` | `agentProvider/config/hive/useHive` 集成、凭据边界与混合模型运行 | `G3/G4` |
+| `W5` | 依赖、本地/公网入口、Skills 为独立证据域 | `1~2` | 真实公网、本地数据备份/恢复和升级决策 | `G5` |
 | `W6` | 只有已批准且互斥的增强项 | 按实际 Lane | 产品优先级、共享 UI/Provider 合同 | 每项独立 Gate |
 
 调度步骤：
@@ -241,7 +241,7 @@ flowchart LR
 | `V3` 集成构建 | Electron Main/Preload/Renderer 可构建 | `npm run build` |
 | `V4` UI 真实入口 | 中英文页面、窄布局、交互和原生弹层 | `npm run dev` + 真实 Electron/Computer Use |
 | `V5` Provider 黄金场景 | 真实 CLI、Hive、PTY、回信、恢复和 Worktree | 受控测试仓库与真实 CLI 收据 |
-| `V6` 安全/分发 | 公网、Skills、依赖、签名和许可证 | 独立授权 Gate，不默认执行 |
+| `V6` 个人自用安全 | 本地凭据、公网入口、Skills、依赖、备份与恢复 | 按实际启用能力验收；未使用的公网能力可以“默认关闭”闭合 |
 
 不运行与当前包无关的全量 Gate。长命令开始前记录预计时长、hard timeout、进度信号和止损点。
 
@@ -338,16 +338,26 @@ Remote daemon 是可选增强。ChatGPT App 内置 Codex 能运行 TUI，不代�
 | `recovering` | session ID、CODEX_HOME、Worktree 路径 | → `running`；原 session/cwd/worktree 证明 | Main/useHive；找不到 session 时不得静默开新会话 |
 | `stopping/failed` | control registry、PTY exit、closing protocol | → `stopped` 或 `recovering` | Control/ClosingTime；区分 halt、kill、自然退出 |
 
-## 10. Wave 3：官方 Gemini CLI
+## 10. Wave 3：Gemini 与 DeepSeek Provider
 
 | ID | 状态 | 目标与写集合 | 非目标 | 完成与 Gate |
 | --- | --- | --- | --- | --- |
 | `W3.1` | 待开始 | 只读冻结官方 `gemini` CLI 的 binary、版本、初始 Prompt、auto、model、resume、hooks、config home 和认证边界 | 不读 Key、不付费调用、不复用 `agy` 未验证参数 | 形成版本化合同矩阵；无法证明的项保持 unknown |
 | `W3.2` | 待开始 | 新增独立 `gemini` Provider、展示与生命周期 Bridge | 不替换 `antigravity/agy`，不污染用户全局 Gemini 配置 | Provider ID 独立；per-agent 配置；模型/权限/恢复/Inbox 路径定向测试 |
-| `W3.3` | 待开始 | 运行 Gemini 单 Provider 黄金场景 | 不与 Codex 混合前跳过自身恢复/回信 Gate | 真实 Hook/idle、回信、任务完成、恢复和安全控制收据 |
-| `G3` | 待开始 | Codex + Gemini 混合办公室 | 不宣传未验 Provider | Michael 与两个 Provider 双向协作、失败隔离、模型显示和成本事实一致 |
+| `W3.3` | 待开始 | 只读冻结 DeepSeek 接入合同并选路：首选 OpenCode 承载 DeepSeek API，第三方 `deepseek` TUI 为备选 | 不把 API 兼容等同于 Agent 生命周期；不在 Electron 重写 Agent Loop；不未验先引入新 CLI | 证明 binary/版本、模型发现、工具调用、权限、Hook/idle、Inbox、resume、per-agent config 和 Key owner；形成唯一路线 |
+| `W3.4` | 待开始 | 新增用户可选的 `deepseek` Provider ID、模型展示、脱敏配置和选定运行引擎 Bridge | 不在 Renderer 传递 Key；不将 DeepSeek 偷偷当作普通 `opencode`；不硬编码即将过期的模型别名 | 独立 ID 往返不丢失；缺 Key/模型/网络失败可行动；生命周期、恢复和 Inbox 有定向测试 |
+| `W3.5` | 待开始 | 分别运行 Gemini 与 DeepSeek 单 Provider 黄金场景 | 不在单 Provider 恢复/回信 Gate 失败时进入混合场景 | 两者分别取得真实 Hook/idle、回信、任务完成、恢复和安全控制收据 |
+| `G3` | 待开始 | Codex + Gemini + DeepSeek 混合办公室 | 不宣传未验 Provider；不以单次 API 返回代替协作 Gate | Michael 与三种 Provider 双向协作、失败隔离、模型显示和用量/成本事实一致 |
 
 `W3.1` 必须取证：实际命令名、初始 Prompt 形式、权限 flag、模型 ID、session ID/恢复、Hook 事件和 stdin/stdout 合同、Stop/continue 语义、配置发现路径、per-agent home、headless/interactive 差异、Inbox delivery owner、认证与费用边界。
+
+`W3.3` 的路线判定顺序：
+
+1. 首选“`deepseek` 产品 Provider ID + OpenCode 引擎”：OpenCode 已有 DeepSeek 认证/模型路径，本项目也已有 OpenCode Bridge；
+2. 若 OpenCode 无法保证独立 per-agent 配置、恢复或稳定 Inbox，再验证 DeepSeek 官方维护的 Agent 集成列表所收录的第三方 `deepseek` TUI；
+3. 两条路线都不能闭合时，保留“OpenCode 中选 DeepSeek 模型”的显式配置，不伪造独立 Provider 成熟度。
+
+取证只使用 [DeepSeek API 官方文档](https://api-docs.deepseek.com/guides/function_calling/)、[OpenCode Provider 官方文档](https://opencode.ai/docs/providers) 和 [DeepSeek 官方维护的 Agent 集成列表](https://github.com/deepseek-ai/awesome-deepseek-agent)。模型 ID 和参数必须在实施时重新快照，不把本文写成永久模型目录。
 
 ## 11. Wave 4：中文角色与协作模板
 
@@ -356,17 +366,19 @@ Remote daemon 是可选增强。ChatGPT App 内置 Codex 能运行 TUI，不代�
 | `W4.1` | 待开始 | 中文产品经理、架构师、开发、测试、审查等角色体系与 Hire Manifest | Manifest 只预填、不自动 Spawn；来源和写集合可审查 |
 | `W4.2` | 待开始 | 可配置的 Agent 回复语言与中文任务合同 | 只影响自然语言；Hive 字段、Hook 和 CLI 合同字节不变 |
 | `W4.3` | 待开始 | 中文多角色协作场景 | 任务拆分、回信、冲突升级和人工问题均在中文 UI 可理解 |
-| `G4` | 待开始 | 中文混合模型角色办公室 | Codex/Gemini 角色可配置、可协作、可停止、可恢复 |
+| `G4` | 待开始 | 中文混合模型角色办公室 | Codex/Gemini/DeepSeek 角色可配置、可协作、可停止、可恢复 |
 
-## 12. Wave 5：安全、依赖、供应链与分发
+## 12. Wave 5：个人自用安全与长期维护
+
+Wave 5 不以商业产品发布为目标。不实施商业素材授权、签名、公证、应用商店上架、公开安装包或自动更新服务；只闭合个人本机长期使用实际需要的安全、可恢复和可维护性。
 
 | ID | 状态 | Gate 重点 | 完成边界 |
 | --- | --- | --- | --- |
 | `W5.1` | 待开始 | Node/Electron/原生模块、lockfile、依赖漏洞和升级兼容 | 安全扫描与升级需单独授权；不能以 `audit fix --force` 试错 |
-| `W5.2` | 待开始 | Slack、Webhook、Tunnel：显式启用、监听地址、鉴权、限流、body cap、轮换、replay、关闭清理 | 真实公网验证另立授权 Gate；Token 不进 URL/日志/收据 |
-| `W5.3` | 待开始 | Skills 来源、提交/哈希、版本、许可证、安装确认、项目级覆盖、撤销和缓存失效 | 不隐式执行远程脚本；远程不可用不静默换源 |
-| `W5.4` | 待开始 | LimeZu/衍生像素素材、签名、公证、安装包和更新 | 商业发布前取得授权或替换资产；法律判断由权利人/专业意见确认 |
-| `G5` | 待开始 | 产品可分发 Gate | 中文 Codex 主链、安全默认值、依赖、外部入口、供应链和许可同时闭合 |
+| `W5.2` | 待开始 | Slack、Webhook、Tunnel 按个人实际需求显式启用；未使用时默认关闭且不阻塞 Gate | 启用时才验收监听地址、鉴权、限流、body cap、轮换、replay 和关闭清理；Token 不进 URL/日志/收据 |
+| `W5.3` | 待开始 | Skills 来源、提交/哈希、版本、安装确认、项目级覆盖、撤销和缓存失效 | 不隐式执行远程脚本；远程不可用不静默换源；不做商业授权审计 |
+| `W5.4` | 待开始 | 本地配置、Hive/任务/知识库、Agent Home 和项目 Worktree 的备份、迁移、恢复与版本回退手册 | 不备份 API Key 明文；不自动删除 Worktree/会话；不建公开发行、签名、公证或上架链路 |
+| `G5` | 待开始 | 个人长期运行 Gate | 中文混合 Provider 主链、安全默认值、已启用的外部入口、Skills 可撤销性以及一次脱敏备份/恢复演练同时闭合 |
 
 ## 13. Wave 6：选择性增强
 
@@ -411,9 +423,12 @@ Wave 6 只有在 `G5` 后按真实使用数据选择，不预先承诺全部实�
 | `G2` | 90 / 180 分钟 | 中文 UI 与真实 Codex 主链已在同一受控场景汇合 |
 | `W3.1` | 60 / 120 分钟 | Gemini CLI 关键接口 unknown/known 矩阵形成 |
 | `W3.2` | 120 / 240 分钟 | 新 Provider 能启动且未复用 `agy` 隐含合同 |
-| `W3.3/G3` | 120 / 240 分钟 | Gemini 单 Provider 首次回信或明确可证伪失败 |
+| `W3.3` | 60 / 120 分钟 | DeepSeek 首选/备选路线形成唯一、可证伪的合同 |
+| `W3.4` | 120 / 240 分钟 | `deepseek` ID 启动且 Key 不进 Renderer/收据 |
+| `W3.5` | 每个 Provider 120 / 240 分钟 | Gemini/DeepSeek 各自首次回信或明确可证伪失败 |
+| `G3` | 120 / 240 分钟 | Codex/Gemini/DeepSeek 首次混合消息路由可观察 |
 | `W4.1~W4.3` | 每包 60 / 120 分钟 | 角色/语言包至少一个真实任务闭环 |
-| `W5.1~W5.4` | 每包 60 / 120 分钟 | 每个安全域形成唯一风险清单和最小 Gate；真实发行可另用 120/240 |
+| `W5.1~W5.4` | 每包 60 / 120 分钟 | 每个自用维护域形成唯一风险清单和最小 Gate；不启动商业发行 Lane |
 | `W6` | 立项时单独预算 | 目标时间一半必须取得用户价值证据，不以功能数量代替 |
 
 ### 14.2 主会话时间与并行收益约束
@@ -439,7 +454,7 @@ Wave 6 只有在 `G5` 后按真实使用数据选择，不预先承诺全部实�
 - 需要扩大写集合到用户脏变更或其它仓库；
 - 需要凭据、付费模型、真实公网、远端写或不可逆操作；
 - 需要删除数据、清理 Worktree/Harness Home 或修改认证目录；
-- 发现商业字体/像素素材授权不明确；
+- DIY 范围从个人非商业自用变为公开或商业分发（需另立设计，不影响当前推进）；
 - 同一真实 Gate 连续暴露第二个需改代码的兼容缺口，应先补失败矩阵而不是继续线上试错。
 
 ## 15. 首包可直接执行合同

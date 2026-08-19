@@ -182,11 +182,11 @@ Slack、Webhook、Tunnel 和远程 Skills 会引入公网暴露、凭据、第�
 
 ### 6.5 依赖治理
 
-项目依赖包含原生模块和较旧依赖链，Node 26 无法完成当前 `better-sqlite3` 安装，Node 22 可以正常构建。应增加 `.nvmrc`、`engines` 或等价版本约束，并在正式分发前完成依赖漏洞审计和升级验证。
+项目依赖包含原生模块和较旧依赖链，Node 26 无法完成当前 `better-sqlite3` 安装，Node 22 可以正常构建。应增加 `.nvmrc`、`engines` 或等价版本约束，并在长期自用前完成依赖漏洞审计和升级验证。
 
-### 6.6 许可证
+### 6.6 个人自用素材边界
 
-源码使用 MIT License，可修改、发布和商业使用；但 `src/renderer/src/assets/` 下 LimeZu 像素素材使用非商业许可，衍生角色素材继承相同限制。商业化前必须购买授权或替换地图、Tileset 和角色素材，详见 [`LICENSE`](../../LICENSE) 与 [`ATTRIBUTION.md`](../../src/renderer/src/assets/ATTRIBUTION.md)。
+本 DIY 定位为个人非商业自用，不将商业授权、商业发布或素材替换纳入实施 Gate 和时间预算。保留 [`LICENSE`](../../LICENSE) 与 [`ATTRIBUTION.md`](../../src/renderer/src/assets/ATTRIBUTION.md)，不单独对外分发 LimeZu 及其衍生像素素材。如未来从个人自用改为公开或商业分发，再另立边界复核，不阻塞当前 DIY。
 
 ## 7. 推荐 DIY 路线
 
@@ -205,12 +205,16 @@ Slack、Webhook、Tunnel 和远程 Skills 会引入公网暴露、凭据、第�
 - 验证关闭 Auto Mode 时的人工审批；
 - 验证 Worktree 隔离和 Git 状态保护。
 
-### M3：Gemini 兼容
+### M3：Gemini 与 DeepSeek Provider
 
 - 区分项目现有 `agy` Antigravity 和官方 `gemini` CLI；
 - 为官方 Gemini CLI 建立独立 Provider 合同；
 - 验证初始提示、Hook、Inbox Drain、恢复和模型选择；
 - 不通过伪装成 `agy` 的方式复用未经验证参数。
+- 新增用户可直接选择的 `deepseek` Provider 入口，但不在 Electron 内重写 Agent Loop；
+- 优先验证“独立 DeepSeek 展示/Provider ID + OpenCode 运行引擎 + DeepSeek API”，复用已有 OpenCode 生命周期 Bridge；
+- 将第三方 `deepseek` TUI 仅作备选，只有当安装来源、沙箱/权限、Hook、Inbox、恢复和 per-agent 配置均可验时才采用；
+- Key 只由 Main/运行引擎从环境或独立认证存储获取，不进 Renderer、日志、Prompt 或 `.work` 收据。
 
 ### M4：中文角色与协作模板
 
@@ -230,7 +234,7 @@ Slack、Webhook、Tunnel 和远程 Skills 会引入公网暴露、凭据、第�
 
 - 根据真实使用频率决定是否深化 Voice、Knowledge Graph、IDE 和更多主题；
 - 未形成稳定主链前，不扩张新的像素世界玩法；
-- 商业化前替换或授权受限制的像素资产。
+- 只维护个人自用需要的本地启动、备份、升级和故障恢复能力。
 
 ## 8. 产品决策
 
@@ -238,4 +242,4 @@ Slack、Webhook、Tunnel 和远程 Skills 会引入公网暴露、凭据、第�
 
 > 一个本地优先、可配置不同模型、可让多个真实 CLI Agent 协作，并以像素办公室呈现状态和角色关系的中文 Agent 工作环境。
 
-短期成功标准不是覆盖所有 Provider 和功能，而是先形成一条稳定、可观察、可停止、可恢复的中文 Codex 多 Agent 黄金主链。完成后再扩展 Gemini、角色模板、自动触发和更多游戏化表现。
+短期成功标准不是覆盖所有 Provider 和功能，而是先形成一条稳定、可观察、可停止、可恢复的中文 Codex 多 Agent 黄金主链。完成后再扩展 Gemini、DeepSeek、角色模板、自动触发和更多游戏化表现。
