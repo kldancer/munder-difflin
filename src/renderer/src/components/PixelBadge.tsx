@@ -1,4 +1,5 @@
 import { CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export type StatusKind =
   | 'idle' | 'thinking' | 'working' | 'waiting' | 'blocked' | 'success' | 'ghost'
@@ -33,23 +34,16 @@ const colorByStatus: Record<StatusKind, string> = {
 // Human-readable labels. "blocked" is reserved for the god agent waiting on YOU,
 // so it reads as "needs you"; sub-agents waiting on god/another agent are
 // "waiting", which is honest about who they're actually stalled on.
-const labelByStatus: Record<StatusKind, string> = {
-  idle:     'idle',
-  thinking: 'working',
-  working:  'working',
-  waiting:  'waiting',
-  blocked:  'needs you',
-  success:  'done',
-  ghost:    'gone',
-  compacting: 'compacting',
-  looping:    'looping',
+const labelKeyByStatus: Record<StatusKind, string> = {
+  idle:     'idle', thinking: 'working', working: 'working', waiting: 'waiting', blocked: 'needsYou', success: 'done', ghost: 'gone', compacting: 'compacting', looping: 'looping',
   // Reads as "you are typing", not "the agent is typing" — it is your text
   // sitting on the prompt, and it is why nothing is being delivered.
-  typing:     'your draft'
+  typing:     'yourDraft'
 };
 
 export function PixelBadge({ status, label, style }: PixelBadgeProps) {
-  const text = label ?? labelByStatus[status] ?? status;
+  const { t } = useTranslation();
+  const text = label ?? t(`status.${labelKeyByStatus[status] ?? status}`);
   return (
     <span
       style={{

@@ -1,4 +1,5 @@
 import { PixelPanel } from '@/components/PixelPanel';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Loader shown on the empty floor while the god agent ("Michael") is clocking
@@ -6,6 +7,7 @@ import { PixelPanel } from '@/components/PixelPanel';
  * the empty-floor call-to-action before Michael has booted.
  */
 export function MichaelBooting() {
+  const { t } = useTranslation();
   return (
     <div style={{
       position: 'absolute', inset: 0,
@@ -13,7 +15,7 @@ export function MichaelBooting() {
       pointerEvents: 'none'
     }}>
       <div style={{ pointerEvents: 'auto', width: 360 }}>
-        <PixelPanel variant="dialog" title="CLOCKING IN" noPadding>
+        <PixelPanel variant="dialog" title={t('michaelBooting.title')} noPadding>
           <div style={{
             padding: 20,
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14
@@ -37,8 +39,7 @@ export function MichaelBooting() {
               margin: 0, fontSize: 13, lineHeight: '20px', textAlign: 'center',
               color: 'var(--cth-ink-700)'
             }}>
-              Michael is settling into the corner office and getting the floor
-              ready. Hang tight…
+              {t('michaelBooting.message')}
             </p>
           </div>
         </PixelPanel>

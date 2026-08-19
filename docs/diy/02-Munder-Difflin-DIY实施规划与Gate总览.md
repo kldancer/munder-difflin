@@ -290,7 +290,7 @@ flowchart LR
 
 | ID | 状态 | 目标与写集合 | 非目标 | 完成与 Gate |
 | --- | --- | --- | --- | --- |
-| `W1.1` | 待开始 | 首次向导、App 壳、HivePicker、通用按钮/Badge、退出/恢复弹层 | 不改 Onboarding 状态机、Provider/model ID 和路径 | 技术/非技术两套中文；切换语言不丢状态；320/375/768px 无裁切；aria/tooltip 完整 |
+| `W1.1` | 实现完成，待 V4 | 首次向导、App 壳、HivePicker、通用按钮/Badge、退出/恢复弹层 | 不改 Onboarding 状态机、Provider/model ID 和路径 | 技术/非技术两套中文和 Key/类型检查已闭合；320/375/768px、缩放与 aria/tooltip 随 G1 统一验证 |
 | `W1.2` | 待开始 | Settings、Add Agent 及其设置子组件 | 不改配置字段、Provider 运行合同或密钥结构 | 七类 Settings 和 Add Agent 主链中文；长错误/模型名可读；保存失败保留稳定错误 code/技术 detail |
 | `W1.3` | 待开始 | Command Center、CommandBar、AgentCard、Tasks、Ask Me、Message Composer、控制条 | 不改 Hive schema、Agent status ID、PTY 输出 | 11 个标签和关键错误中文；0/1/多复数正确；暂停/恢复/纠偏/任务依赖 UI 可验 |
 | `W1.4` | 待开始 | Memory、Graph、Skills、Triggers、History、Workers、Integrations 的展示文案 | 不启用远程 Skills、公网 Trigger 或外部调用 | 中文资源覆盖；技术字段保持原样；空态、失败态、缓存态、权限提示可验 |
