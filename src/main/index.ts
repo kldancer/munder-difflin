@@ -80,6 +80,7 @@ import {
   codexRemoteAliasPath,
   codexRemoteEndpoint,
   codexRemoteSocketFits,
+  probeCodexExecutable,
   withCodexRemoteArgs
 } from '../shared/codexRemote';
 
@@ -183,6 +184,14 @@ async function enableCodexRemoteForSpawn(
     // shellEnv's resolver mirrors PtyManager's (which is private + returns
     // {path, found}); the daemon just needs the best executable path.
     const executable = resolveCliCommand(opts.command);
+    const probe = probeCodexExecutable(executable, {
+      codexHome: realHome,
+      standaloneHome: join(homedir(), '.codex')
+    });
+    if (!probe.remote.eligible) {
+      console.warn(`[codex-remote] ${probe.source}: ${probe.remote.reason}`);
+      return false;
+    }
     const started = await runCodexDaemonCommand(
       executable,
       ['app-server', 'daemon', 'start'],

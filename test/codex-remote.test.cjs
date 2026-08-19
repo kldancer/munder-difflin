@@ -9,6 +9,7 @@ const {
   codexRemoteEndpoint,
   codexRemoteSocketFits,
   withCodexRemoteArgs,
+  probeCodexExecutable,
   CODEX_REMOTE_SOCKET_MAX,
   CODEX_REMOTE_SOCKET_RELATIVE
 } = loadTs('src/shared/codexRemote.ts');
@@ -57,4 +58,43 @@ test('remote endpoint precedes both fresh and resumed Codex invocations', () => 
     withCodexRemoteArgs(['--remote', endpoint, 'resume'], endpoint),
     ['--remote', endpoint, 'resume']
   );
+});
+
+test('Codex executable probe distinguishes App, standalone, and PATH TUI sources', () => {
+  const app = probeCodexExecutable('/Applications/ChatGPT.app/Contents/Resources/codex', {
+    pathExists: () => false
+  });
+  assert.equal(app.source, 'chatgpt-app');
+  assert.equal(app.remote.eligible, false);
+  assert.match(app.remote.reason, /standalone|TUI/);
+
+  const standalone = probeCodexExecutable('/Users/test/.local/bin/codex', {
+    codexHome: '/Users/test/.codex',
+    pathExists: (path) => path === '/Users/test/.codex/packages'
+  });
+  assert.equal(standalone.source, 'installer-standalone');
+  assert.equal(standalone.remote.eligible, true);
+
+  const incompleteStandalone = probeCodexExecutable('/Users/test/.codex/bin/codex', {
+    standaloneHome: '/Users/test/.codex',
+    pathExists: () => false
+  });
+  assert.equal(incompleteStandalone.source, 'installer-standalone');
+  assert.equal(incompleteStandalone.remote.eligible, false);
+  assert.match(incompleteStandalone.remote.reason, /packages|TUI/);
+
+  const tui = probeCodexExecutable('/usr/local/bin/codex', {
+    pathExists: () => false
+  });
+  assert.equal(tui.source, 'path-tui');
+  assert.equal(tui.remote.eligible, false);
+  assert.match(tui.remote.reason, /packages|TUI/);
+});
+
+test('probe does not alter fresh or resume arguments', () => {
+  const fresh = ['--model', 'gpt-5.6-sol', 'hello'];
+  const resumed = ['resume', 'session-id', '--model', 'gpt-5.6-sol'];
+  probeCodexExecutable('/usr/local/bin/codex', { pathExists: () => false });
+  assert.deepEqual(fresh, ['--model', 'gpt-5.6-sol', 'hello']);
+  assert.deepEqual(resumed, ['resume', 'session-id', '--model', 'gpt-5.6-sol']);
 });
