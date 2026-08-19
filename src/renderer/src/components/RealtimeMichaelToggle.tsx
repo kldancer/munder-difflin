@@ -18,6 +18,7 @@
  */
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
 import { useStore } from '@/store/store';
@@ -29,10 +30,10 @@ const STATE_VIEW: Record<
   RealtimeStatus,
   {
     variant: 'primary' | 'secondary' | 'destructive';
-    label: string;
+    labelKey: string;
     dot: string;
     anim?: string;
-    help: string;
+    helpKey: string;
     /** When live, the button fill — a distinct accent so the active mic never
      *  reads as a flat black 'primary' button. (working uses the destructive
      *  coral variant, already non-black, so it needs no override.) */
@@ -41,39 +42,39 @@ const STATE_VIEW: Record<
 > = {
   off: {
     variant: 'secondary',
-    label: 'talk',
+    labelKey: 'realtimeVoice.off',
     dot: 'var(--cth-ink-300)',
-    help: 'Talk to Michael — start the voice session'
+    helpKey: 'realtimeVoice.offHelp'
   },
   connecting: {
     variant: 'secondary',
-    label: '…',
+    labelKey: 'realtimeVoice.connecting',
     dot: 'var(--cth-lemon)',
     anim: 'cth-blink 700ms steps(2, end) infinite',
-    help: 'Connecting to Michael…'
+    helpKey: 'realtimeVoice.connectingHelp'
   },
   listening: {
     variant: 'primary',
-    label: 'listening',
+    labelKey: 'realtimeVoice.listening',
     dot: 'var(--cth-mint)',
     anim: 'cth-pulse 1000ms steps(2, end) infinite',
-    help: 'Listening — Michael is hearing you (click to stop)',
+    helpKey: 'realtimeVoice.listeningHelp',
     activeBg: 'var(--cth-mint)'
   },
   responding: {
     variant: 'primary',
-    label: 'speaking',
+    labelKey: 'realtimeVoice.speaking',
     dot: 'var(--cth-sky)',
     anim: 'cth-pulse 600ms steps(2, end) infinite',
-    help: 'Michael is speaking (click to stop)',
+    helpKey: 'realtimeVoice.speakingHelp',
     activeBg: 'var(--cth-sky)'
   },
   working: {
     variant: 'destructive',
-    label: 'working',
+    labelKey: 'realtimeVoice.working',
     dot: 'var(--cth-coral)',
     anim: 'cth-blink 500ms steps(2, end) infinite',
-    help: 'Michael is running a tool — mic muted (click to stop)'
+    helpKey: 'realtimeVoice.workingHelp'
   }
 };
 
@@ -83,6 +84,7 @@ export interface RealtimeMichaelToggleProps {
 }
 
 export function RealtimeMichaelToggle({ compact = false }: RealtimeMichaelToggleProps) {
+  const { t } = useTranslation();
   const hasOpenAiKey = useStore((s) => s.hasOpenAiKey);
   const { status, error, connect, disconnect } = useRealtimeMichael();
   // Measured viewport coords, not a CSS offset. The agent dock clips its
@@ -104,10 +106,10 @@ export function RealtimeMichaelToggle({ compact = false }: RealtimeMichaelToggle
   // The tooltip carries the full WHY; the quiet info affordance below gives a
   // discoverable cue so the user never just hits a silently-dead button.
   const title = noKey
-    ? 'Talk needs your OpenAI API key (used for the Realtime voice API). Add it in Settings → Voice.'
+    ? t('realtimeVoice.noKeyTitle')
     : error
-      ? `${view.help} — ${error}`
-      : view.help;
+      ? `${t(view.helpKey)} — ${error}`
+      : t(view.helpKey);
 
   const onClick = () => {
     if (noKey) return;
@@ -216,7 +218,7 @@ export function RealtimeMichaelToggle({ compact = false }: RealtimeMichaelToggle
           <Icon name="mic" />
           {!compact && (
             <span style={{ fontFamily: 'var(--cth-font-ui)' }}>
-              {noKey ? 'talk' : view.label}
+              {noKey ? t('realtimeVoice.off') : t(view.labelKey)}
             </span>
           )}
         </span>
@@ -235,7 +237,7 @@ export function RealtimeMichaelToggle({ compact = false }: RealtimeMichaelToggle
           <button
             ref={iconRef}
             type="button"
-            aria-label="Why is Talk disabled?"
+            aria-label={t('realtimeVoice.whyDisabled')}
             aria-expanded={hintOpen}
             onClick={toggleHint}
             style={{
@@ -276,7 +278,7 @@ export function RealtimeMichaelToggle({ compact = false }: RealtimeMichaelToggle
                 whiteSpace: 'normal'
               }}
             >
-              <span>An <strong>OpenAI API key</strong> is needed to use this feature.</span>
+              <span>{t('realtimeVoice.keyNeeded')}</span>
               <button
                 type="button"
                 onClick={openKeySettings}
@@ -287,7 +289,7 @@ export function RealtimeMichaelToggle({ compact = false }: RealtimeMichaelToggle
                   color: 'var(--cth-ink-900)', textDecoration: 'underline'
                 }}
               >
-                set it up now
+                {t('realtimeVoice.setupNow')}
               </button>
             </div>,
             document.body

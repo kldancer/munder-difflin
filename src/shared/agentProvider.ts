@@ -27,8 +27,10 @@ export type AgentProvider =
   | 'grok'
   | 'kimi'
   | 'antigravity'
+  | 'gemini'
   | 'qwen'
   | 'opencode'
+  | 'deepseek'
   | 'crush'
   | 'pi'
   | 'copilot'
@@ -49,7 +51,7 @@ export type AgentProvider =
  *               and `inboxDelivery` is how mail reaches it ('terminal' work-order
  *               handoff today; 'serve' reserved for a future HTTP push path). */
 export type BridgeDescriptor =
-  | { kind: 'hooks'; shim: 'agy' | 'codex' | 'pi' | 'opencode' | 'grok' }
+  | { kind: 'hooks'; shim: 'agy' | 'codex' | 'gemini' | 'pi' | 'opencode' | 'grok' }
   | {
       kind: 'proxy';
       api: 'openai' | 'anthropic';
@@ -291,6 +293,32 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     resumeFlag: '--conversation' // agy: resume a previous conversation by ID
   },
   {
+    // Official Google Gemini CLI. This is deliberately independent from the
+    // third-party Antigravity/agy provider: the binaries, flags, hook event names,
+    // config discovery and session identifiers are different contracts.
+    id: 'gemini',
+    label: 'Gemini CLI · Google',
+    defaultCommand: 'gemini',
+    commandGroups: [],
+    autoModeFlag: '--approval-mode yolo --skip-trust',
+    autoFlag: '--approval-mode yolo --skip-trust',
+    supportsModel: true,
+    modelFlag: '--model',
+    hiveAware: false,
+    // Official Gemini hooks use BeforeTool/AfterTool/BeforeAgent/AfterAgent.
+    // A per-agent GEMINI_CLI_HOME keeps generated settings and sessions isolated;
+    // the translating shim maps those events onto the common HookServer contract.
+    bridge: { kind: 'hooks', shim: 'gemini' },
+    canReceiveInbox: true,
+    initialPromptFlag: '--prompt-interactive',
+    positionalInitialPrompt: false,
+    // `gemini --resume <uuid>` restores the CLI-owned session stored in the same
+    // per-agent home. Hook payloads expose that UUID as session_id.
+    resumeFlag: '--resume',
+    installCommand: 'npm install -g @google/gemini-cli',
+    docsUrl: 'https://geminicli.com/docs'
+  },
+  {
     // qwen-code — the Qwen CLI (a gemini-cli fork) driving any OpenAI-compatible
     // endpoint (OPENAI_BASE_URL). It has no hook surface, so it rides a PROXY
     // bridge (bridge.kind==='proxy'), with the OpenAI usage/tool-call shape.
@@ -360,9 +388,9 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // every BYOK slug in OPENCODE_MODELS stays one click away for whoever has
     // the key.
     recommendedOrchestratorModel: undefined,
-    // Capturing the TUI session id for resume is unverified; spawn fresh on respawn
-    // (protocol re-injected as the initial prompt), matching codex.
-    resumeFlag: undefined,
+    // Current OpenCode exposes `--session <id>` for TUI resume. The native plugin
+    // records `event.properties.sessionID` on session.idle into the hive registry.
+    resumeFlag: '--session',
     installCommand: 'npm install -g opencode-ai@latest', // trusted, hardcoded
     // Node-free installers, for the rung that runs when npm is absent AND no Node
     // installer could be resolved (offline / unsupported platform) — until now
@@ -382,6 +410,31 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
       win32: 'choco install opencode -y'
     },
     docsUrl: 'https://opencode.ai/docs'
+  },
+  {
+    // DeepSeek is a first-class product provider in Munder Difflin while OpenCode
+    // remains its execution engine. This preserves an honest UI/config identity
+    // and reuses OpenCode's real tool loop + native session.idle plugin bridge.
+    id: 'deepseek',
+    label: 'DeepSeek · OpenCode',
+    defaultCommand: 'opencode',
+    commandGroups: [],
+    autoModeFlag: '',
+    autoFlag: '',
+    supportsModel: true,
+    modelFlag: '--model',
+    hiveAware: false,
+    bridge: { kind: 'hooks', shim: 'opencode' },
+    canReceiveInbox: true,
+    initialPromptFlag: '--prompt',
+    recommendedOrchestratorModel: 'deepseek/deepseek-v4-pro',
+    resumeFlag: '--session',
+    installCommand: 'npm install -g opencode-ai@latest',
+    nativeInstallCommand: {
+      posix: 'curl -fsSL https://opencode.ai/install | bash',
+      win32: 'choco install opencode -y'
+    },
+    docsUrl: 'https://opencode.ai/docs/providers'
   },
   {
     // Crush — Charmbracelet's Go TUI coding agent (charmbracelet/crush), successor to
@@ -514,8 +567,10 @@ export function isAgentProvider(value: unknown): value is AgentProvider {
     value === 'grok' ||
     value === 'kimi' ||
     value === 'antigravity' ||
+    value === 'gemini' ||
     value === 'qwen' ||
     value === 'opencode' ||
+    value === 'deepseek' ||
     value === 'crush' ||
     value === 'pi' ||
     value === 'copilot' ||
@@ -564,6 +619,7 @@ export function inferAgentProvider(command: string | undefined, explicit?: unkno
   if (bin === 'grok') return 'grok';
   if (bin === 'kimi') return 'kimi';
   if (bin === 'agy' || bin === 'antigravity') return 'antigravity';
+  if (bin === 'gemini') return 'gemini';
   if (bin === 'qwen') return 'qwen';
   if (bin === 'opencode') return 'opencode';
   if (bin === 'crush') return 'crush';
@@ -599,6 +655,56 @@ export function autoModeFlagForProvider(provider: AgentProvider): string {
 /** Returns any env vars the provider needs for non-interactive / first-run suppression. */
 export function nonInteractiveEnvForProvider(provider: AgentProvider): Record<string, string> {
   return providerPreset(provider).nonInteractiveEnv ?? {};
+}
+
+/** Build the runtime-only OpenCode config injected by the main process.
+ *
+ * A Hive worker's project cwd and durable mailbox normally live in different
+ * directory trees. OpenCode gates that second tree behind `external_directory`,
+ * so auto mode must allow it alongside edit/bash/webfetch or the agent can run
+ * the model but cannot read its own inbox or write its outbox. */
+export function buildOpenCodeRuntimeConfig(
+  autoMode: boolean,
+  baseUrl?: string,
+  modelSlug = ''
+): Record<string, unknown> {
+  const config: Record<string, unknown> = { autoupdate: false };
+  if (autoMode) {
+    config.permission = {
+      edit: 'allow',
+      bash: 'allow',
+      webfetch: 'allow',
+      external_directory: 'allow'
+    };
+  }
+  if (baseUrl) {
+    const prefix = modelSlug.includes('/') ? modelSlug.split('/')[0].toLowerCase() : '';
+    const localModel = (prefix === 'local' && modelSlug.slice(6)) || 'local';
+    config.provider = {
+      local: {
+        npm: '@ai-sdk/openai-compatible',
+        name: 'Local (self-hosted)',
+        options: { baseURL: baseUrl },
+        models: { [localModel]: { name: localModel } }
+      }
+    };
+  }
+  return config;
+}
+
+/** System-settings overlay used only when the main-process key broker has a
+ * Gemini API key for this worker. Pinning both fields prevents the first-run
+ * auth chooser from rendering the environment credential inside the PTY. The
+ * overlay contains no credential material. */
+export function geminiApiKeySystemSettings(): Record<string, unknown> {
+  return {
+    security: {
+      auth: {
+        selectedType: 'gemini-api-key',
+        enforcedType: 'gemini-api-key'
+      }
+    }
+  };
 }
 
 /** Returns the command reference groups for the given provider. */

@@ -3,6 +3,7 @@ import { PixelPanel } from './PixelPanel';
 import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
 import { AccentColorName } from '@/design/tokens';
+import { useTranslation } from 'react-i18next';
 
 type Mode = 'free' | 'slash' | 'quick';
 
@@ -14,6 +15,7 @@ export interface CommandBarProps {
 }
 
 export function CommandBar({ accent, busy, blocked, onSend }: CommandBarProps) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<Mode>('free');
   const [text, setText] = useState('');
 
@@ -56,7 +58,7 @@ export function CommandBar({ accent, busy, blocked, onSend }: CommandBarProps) {
               cursor: 'pointer'
             }}
           >
-            {m === 'free' ? 'free' : m === 'slash' ? '/skill' : 'quick'}
+            {m === 'free' ? t('commandBar.free') : m === 'slash' ? t('commandBar.slash') : t('commandBar.quick')}
           </button>
         ))}
       </div>
@@ -73,7 +75,7 @@ export function CommandBar({ accent, busy, blocked, onSend }: CommandBarProps) {
             value={text}
             onChange={e => setText(e.target.value)}
             onKeyDown={onKey}
-            placeholder={blocked ? "Ada needs you..." : busy ? "Ada is working..." : "Type a command"}
+            placeholder={blocked ? t('commandBar.blockedPlaceholder') : busy ? t('commandBar.busyPlaceholder') : t('commandBar.placeholder')}
             style={{
               flex: 1,
               padding: '4px 6px 2px',
@@ -89,13 +91,13 @@ export function CommandBar({ accent, busy, blocked, onSend }: CommandBarProps) {
           />
           <PixelButton variant="primary" size="md" onClick={send}>
             <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-              send <Icon name="arrow-right" />
+              {t('commandBar.send')} <Icon name="arrow-right" />
             </span>
           </PixelButton>
         </div>
       </PixelPanel>
-      {busy && <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>Ada is mid-tool. Queue or hit pause.</span>}
-      {blocked && <span style={{ fontSize: 12, color: 'var(--cth-coral)' }}>Approval needed.</span>}
+      {busy && <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>{t('commandBar.busy')}</span>}
+      {blocked && <span style={{ fontSize: 12, color: 'var(--cth-coral)' }}>{t('commandBar.approval')}</span>}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
 import { PixelBadge } from './PixelBadge';
 import { useStore } from '@/store/store';
@@ -40,6 +41,7 @@ function dependentsTree(id: string, all: HiveTask[], seen = new Set<string>()): 
 }
 
 export function AskMeTab() {
+  const { t: tr } = useTranslation();
   const agents = useStore((s) => s.agents);
   const restorable = useStore((s) => s.restorableAgents);
   const [tasks, setTasks] = useState<HiveTask[]>([]);
@@ -141,10 +143,9 @@ export function AskMeTab() {
     <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: 'var(--cth-paper-200)', padding: 10, display: 'flex', flexDirection: 'column', gap: 10, fontFamily: 'var(--cth-font-mono)' }}>
       {waiting.length === 0 && (
         <div style={{ textAlign: 'center', padding: '24px 12px', color: 'var(--cth-ink-500)', fontSize: 12 }}>
-          Nothing needs you right now. 🌿<br />
+          {tr('askMe.empty')}<br />
           <span style={{ fontSize: 11, color: 'var(--cth-ink-300)' }}>
-            When the team blocks a task on your input — a question to answer or a to-do only
-            you can perform — it shows up here (and on the ASK ME board on the floor).
+            {tr('askMe.emptyHint')}
           </span>
         </div>
       )}
@@ -163,7 +164,7 @@ export function AskMeTab() {
             }}>
               <button
                 onClick={() => openTaskDetail(t.id)}
-                title="open the full task detail"
+                title={tr('askMe.open')}
                 style={{
                   border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, textAlign: 'left',
                   fontFamily: 'var(--cth-font-mono)', fontSize: 15, color: 'var(--cth-ink-900)',
@@ -179,8 +180,8 @@ export function AskMeTab() {
               <button
                 onClick={() => void dismiss(t)}
                 disabled={sending === t.id}
-                title="dismiss — clear this off the ASK ME board without answering (history kept)"
-                aria-label="dismiss this ask"
+                title={tr('askMe.dismissTitle')}
+                aria-label={tr('askMe.dismissLabel')}
                 style={{
                   flexShrink: 0, width: 18, height: 18, padding: 0, marginLeft: 2,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1,
@@ -205,7 +206,7 @@ export function AskMeTab() {
                 onChange={(e) => setAnswerDraft(t.id, e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void sendAnswer(t); }}
                 rows={3}
-                placeholder="Your answer — or 'done', with the result… (Ctrl+Enter to send)"
+                placeholder={tr('askMe.answerPlaceholder')}
                 style={{
                   width: '100%', boxSizing: 'border-box', padding: '6px 8px', resize: 'vertical',
                   background: 'var(--cth-paper-100)', border: 'none',
@@ -220,12 +221,12 @@ export function AskMeTab() {
                   disabled={!(drafts[t.id] ?? '').trim() || sending === t.id}
                   onClick={() => void sendAnswer(t)}
                 >
-                  {sending === t.id ? 'sending…' : 'respond & unblock'}
+                  {sending === t.id ? tr('queue.transcribing') : tr('askMe.respond')}
                 </PixelButton>
                 {(t.humanQA?.filter((e) => e.a).length ?? 0) > 0 && (
                   <button
                     onClick={() => openTaskDetail(t.id)}
-                    title="open the task detail with the full Q&A history"
+                    title={tr('askMe.historyTitle')}
                     style={{
                       border: 'none', background: 'transparent', cursor: 'pointer', padding: 0,
                       fontSize: 10, color: 'var(--cth-ink-700)', fontFamily: 'var(--cth-font-display)',

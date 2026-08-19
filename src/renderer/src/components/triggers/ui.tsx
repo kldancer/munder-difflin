@@ -1,4 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { TRIGGER_MODES, type TriggerMode } from '@shared/triggers';
 
 /**
@@ -78,6 +79,7 @@ export function Callout({ children, tone = 'warn' }: { children: ReactNode; tone
 export function Toggle({ on, onClick, onLabel = 'on', offLabel = 'off' }: {
   on: boolean; onClick: () => void; onLabel?: string; offLabel?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <button
       onClick={onClick}
@@ -87,7 +89,7 @@ export function Toggle({ on, onClick, onLabel = 'on', offLabel = 'off' }: {
         boxShadow: `inset 0 0 0 1px ${on ? 'var(--cth-ink-900)' : 'var(--cth-ink-700)'}`,
         fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-900)'
       }}
-    >{on ? onLabel : offLabel}</button>
+    >{on ? (onLabel === 'on' ? t('triggers.on') : onLabel) : (offLabel === 'off' ? t('triggers.off') : offLabel)}</button>
   );
 }
 
@@ -236,13 +238,15 @@ export function SubHeader({ open, onToggle, title, sub, right }: {
 /** The shared `strict / allow-all / communication-only` gate. Labels and blurbs
  *  come from `TRIGGER_MODES` so webhooks and org can never drift apart. */
 export function ModePicker({ value, onChange }: { value: TriggerMode; onChange: (m: TriggerMode) => void }) {
+  const { t } = useTranslation();
   const current = TRIGGER_MODES.find((m) => m.value === value) ?? TRIGGER_MODES[0];
+  const label = (m: typeof current) => m.value === 'strict' ? t('triggers.command') : m.value === 'allow-all' ? t('triggers.everyone') : t('triggers.organization');
   return (
     <>
       <Select value={value} onChange={(v) => onChange(v as TriggerMode)} style={{ width: '100%' }}>
-        {TRIGGER_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+        {TRIGGER_MODES.map((m) => <option key={m.value} value={m.value}>{label(m)}</option>)}
       </Select>
-      <Hint>{current.blurb}</Hint>
+      <Hint>{label(current)}</Hint>
     </>
   );
 }
@@ -289,6 +293,7 @@ const CUSTOM = '__custom';
 export function IntervalPicker({ value, onChange, minMs = MINUTE, maxMs = Number.POSITIVE_INFINITY }: {
   value: number; onChange: (ms: number) => void; minMs?: number; maxMs?: number;
 }) {
+  const { t } = useTranslation();
   const opts = INTERVAL_OPTS.filter((o) => o.ms >= minMs && o.ms <= maxMs);
   const preset = opts.some((o) => o.ms === value);
   const [custom, setCustom] = useState(!preset);
@@ -306,7 +311,7 @@ export function IntervalPicker({ value, onChange, minMs = MINUTE, maxMs = Number
       >
         {!preset && <option value={CUSTOM}>{fmtInterval(value)} (custom)</option>}
         {opts.map((o) => <option key={o.ms} value={String(o.ms)}>{o.label}</option>)}
-        {preset && <option value={CUSTOM}>custom…</option>}
+        {preset && <option value={CUSTOM}>{t('triggers.custom')}</option>}
       </Select>
       {showCustom && (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -321,7 +326,7 @@ export function IntervalPicker({ value, onChange, minMs = MINUTE, maxMs = Number
             }}
             style={{ ...monoInputStyle, width: 68, padding: '3px 5px' }}
           />
-          <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>min</span>
+          <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>{t('triggers.min')}</span>
         </span>
       )}
     </div>
@@ -370,6 +375,7 @@ export function SecretField({ value, revealed, onReveal, onCopy, copied, placeho
   onChange?: (v: string) => void;
   onBlur?: () => void;
 }) {
+  const { t } = useTranslation();
   const readOnly = !onChange;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -382,8 +388,8 @@ export function SecretField({ value, revealed, onReveal, onCopy, copied, placeho
         onBlur={onBlur}
         style={{ ...monoInputStyle, flex: 1, minWidth: 0, padding: '4px 6px' }}
       />
-      <MiniButton onClick={onReveal}>{revealed ? 'hide' : 'show'}</MiniButton>
-      {onCopy && <MiniButton onClick={onCopy} tone={copied ? 'good' : 'plain'}>{copied ? 'copied' : 'copy'}</MiniButton>}
+      <MiniButton onClick={onReveal}>{revealed ? t('triggers.hide') : t('triggers.show')}</MiniButton>
+      {onCopy && <MiniButton onClick={onCopy} tone={copied ? 'good' : 'plain'}>{copied ? t('triggers.copied') : t('triggers.copy')}</MiniButton>}
     </div>
   );
 }

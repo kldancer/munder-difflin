@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
 import { disposeTerminal } from './terminalPool';
@@ -26,6 +27,8 @@ const THEME_META: ThemeMeta[] = [
  *  theme picker with the destructive switch flow (report §E). Self-contained so
  *  it stays out of SettingsModal's bulk. */
 export function OfficeThemePicker({ config }: { config: HarnessConfig }) {
+  const { t } = useTranslation();
+  const r = (key: string, options?: Record<string, unknown>) => t(`residual.${key}`, options);
   const [enabled, setEnabled] = useState(!!config.tvShowOffices);
   const [current, setCurrent] = useState<ThemeId>((config.officeTheme as ThemeId) ?? 'office');
   const [pending, setPending] = useState<ThemeId | null>(null);
@@ -95,21 +98,21 @@ export function OfficeThemePicker({ config }: { config: HarnessConfig }) {
         fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
         color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 10
       }}>
-        Office Theme
+        {r('officeTheme')}
       </div>
 
       {/* Experimental feature flag */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
-            TV-show office themes <span style={{ color: 'var(--cth-ink-500)' }}>(experimental)</span>
+            {t('settings.officeThemes', { defaultValue: 'TV-show office themes' })} <span style={{ color: 'var(--cth-ink-500)' }}>({t('settings.experimental', { defaultValue: 'experimental' })})</span>
           </span>
           <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-            Re-skin the pixel office as a TV show. Switching starts a fresh cast.
+            {r('officeHelp')}
           </span>
         </div>
         <PixelButton variant={enabled ? 'primary' : 'secondary'} size="sm" onClick={toggleFlag}>
-          {enabled ? 'on' : 'off'}
+          {enabled ? t('settings.on') : t('settings.off')}
         </PixelButton>
       </div>
 
@@ -144,12 +147,12 @@ export function OfficeThemePicker({ config }: { config: HarnessConfig }) {
                     </span>
                     {isCurrent && (
                       <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 7, color: 'var(--cth-mint)', textTransform: 'uppercase' }}>
-                        current
+                        {r('current')}
                       </span>
                     )}
                     {!t.built && !isCurrent && (
                       <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 7, color: 'var(--cth-ink-500)', textTransform: 'uppercase' }}>
-                        soon
+                        {r('soon')}
                       </span>
                     )}
                   </span>
@@ -192,6 +195,8 @@ function ThemeSwitchConfirmModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { t } = useTranslation();
+  const r = (key: string, options?: Record<string, unknown>) => t(`residual.${key}`, options);
   const n = agents.length;
   const working = agents.filter((a) => a.status && !['idle', 'success', 'error'].includes(a.status)).length;
   const godName = useStore.getState().agents.find((a) => a.isGod)?.name ?? 'the orchestrator';
@@ -221,18 +226,18 @@ function ThemeSwitchConfirmModal({
                   fontFamily: 'var(--cth-font-display)', fontSize: 12, lineHeight: '20px',
                   color: 'var(--cth-ink-900)', marginBottom: 4,
                 }}>
-                  STARTS A FRESH CAST
+                  {t('residual.freshCast', { defaultValue: 'STARTS A FRESH CAST' })}
                 </div>
                 <div style={{ fontSize: 15, lineHeight: '22px', color: 'var(--cth-ink-700)' }}>
-                  Your <strong>{n} current agent{n === 1 ? '' : 's'}</strong> will be deleted — their terminals close and any in-progress work stops. Only <strong>{godName}</strong> carries over.
+                  {r(n === 1 ? 'officeWarning_one' : 'officeWarning_other', { count: n, godName })}
                   {working > 0 && (
                     <span style={{ display: 'block', marginTop: 6, color: 'var(--cth-coral)' }}>
-                      ⚠ {working} agent{working === 1 ? ' is' : 's are'} still working.
+                      ⚠ {working} {t(working === 1 ? 'residual.working_one' : 'residual.working_other', { count: working, defaultValue: working === 1 ? 'agent is still working.' : 'agents are still working.' })}
                     </span>
                   )}
                 </div>
                 <div style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)', marginTop: 8 }}>
-                  This can't be undone.
+                  {t('residual.cannotUndo', { defaultValue: "This can't be undone." })}
                 </div>
               </div>
             </div>

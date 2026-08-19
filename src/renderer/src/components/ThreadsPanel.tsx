@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PixelPanel } from './PixelPanel';
 import { PixelButton } from './PixelButton';
+import { useTranslation } from 'react-i18next';
 
 // Derive the message shape from the preload-exposed API so the renderer never
 // reaches across project boundaries for a type (window.cth is globally typed).
@@ -46,6 +47,7 @@ function groupThreads(msgs: HiveMessage[]): Thread[] {
 }
 
 export function ThreadsPanel({ agentId }: ThreadsPanelProps) {
+  const { t } = useTranslation();
   const [messages, setMessages] = useState<HiveMessage[]>([]);
   const [openThreads, setOpenThreads] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -145,7 +147,7 @@ export function ThreadsPanel({ agentId }: ThreadsPanelProps) {
                   <textarea
                     value={drafts[thread.conversation] ?? ''}
                     onChange={e => setDrafts(d => ({ ...d, [thread.conversation]: e.target.value }))}
-                    placeholder={`Reply to ${last.from}…`}
+                    placeholder={t('threads.reply', { name: last.from })}
                     rows={2}
                     style={{
                       resize: 'vertical', width: '100%', boxSizing: 'border-box', padding: '6px 8px',

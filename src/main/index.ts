@@ -17,6 +17,7 @@ import {
   readConfig, writeConfig, resetConfig, ensureHarnessHome, ensureClaudePermissionsAccepted,
   modelForRole, OPS_STANDUP_MISSION, HEARTBEAT_MISSION, COMPACT_MAINTENANCE_MISSION, type HarnessConfig, type ScheduledMission
 } from './config';
+import { t } from './i18n';
 import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde } from './fs';
 import {
   getBranch, getStatus, getLog, getBranches, getAheadBehind, isRepo, getDiff, mainRepoRoot,
@@ -66,6 +67,8 @@ import {
   inferAgentProvider,
   isClaudeProvider,
   nonInteractiveEnvForProvider,
+  buildOpenCodeRuntimeConfig,
+  geminiApiKeySystemSettings,
   providerPreset,
   installInfoForProvider,
   type AgentProvider
@@ -242,7 +245,8 @@ const hive = new HiveManager(
     const wc = liveWebContents();
     if (!wc) return false;
     try { wc.send(channel, payload); return true; } catch { return false; }
-  }
+  },
+  () => readConfig().locale
 );
 // #7C — operator control state (pause/gate/steer/halt), read by the HookServer
 // when deciding hook returns.
@@ -367,6 +371,7 @@ const BACKEND_KEY_ENV: Record<string, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
   openai: 'OPENAI_API_KEY',
   google: 'GEMINI_API_KEY',
+  deepseek: 'DEEPSEEK_API_KEY',
   openrouter: 'OPENROUTER_API_KEY',
   groq: 'GROQ_API_KEY'
 };
@@ -2096,8 +2101,8 @@ ipcMain.handle('hire:drainPending', () => {
 // IPC: "import hire…" file picker in the Add-Agent modal.
 ipcMain.handle('hire:openFile', async () => {
   const res = await dialog.showOpenDialog({
-    title: 'Import a hire manifest',
-    filters: [{ name: 'Hire manifest', extensions: ['json'] }],
+    title: t('main.hireImportTitle'),
+    filters: [{ name: t('main.hireManifest'), extensions: ['json'] }],
     properties: ['openFile']
   });
   if (res.canceled || res.filePaths.length === 0) return { ok: false, error: 'cancelled' };
@@ -2223,11 +2228,11 @@ function createWindow(opts: { floor?: boolean } = {}): BrowserWindow {
       if (owned > 0) {
         const choice = dialog.showMessageBoxSync(win, {
           type: 'warning',
-          buttons: ['Close floor', 'Cancel'],
+          buttons: [t('main.closeFloor'), t('main.cancel')],
           defaultId: 1,
           cancelId: 1,
-          message: `Close this floor? ${owned} running terminal${owned === 1 ? '' : 's'} on it will be stopped.`,
-          detail: 'Other floors keep running.'
+          message: t('main.closeFloorMessage', { count: owned }),
+          detail: t('main.otherFloorsRunning')
         });
         if (choice === 1) e.preventDefault();
       }
@@ -2502,6 +2507,10 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
           // Windows floor. Empty when the KG is off (the line isn't emitted then).
           kgCliPath: knowledge.env().KG_CLI,
           theme: readConfig().terminalTheme ?? 'light',
+          // Auto Mode is the operator's explicit permission/sandbox bypass. Use
+          // the same choice to trust only this Codex spawn's cwd (and git common
+          // root), avoiding an interactive startup prompt without broad trust.
+          codexTrustProject: readConfig().autoMode,
           // W3 — default-MCP consent state + the bundled skills source dir.
           mcpDefaults: readConfig().mcpDefaults,
           skillsDir: skillsResourceDir()
@@ -2655,7 +2664,10 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   // the local-LLM path, a per-provider base URL. Keys are write-only in the broker
   // (read MAIN-ONLY here, never logged); base URLs ride HarnessConfig. Claude/codex
   // use their own login, so they skip this. Pam guardrails #3/#4/#5.
-  if (opts.hive && (provider === 'opencode' || provider === 'crush' || provider === 'pi' || provider === 'qwen')) {
+  if (opts.hive && (
+    provider === 'gemini' || provider === 'deepseek' || provider === 'opencode'
+    || provider === 'crush' || provider === 'pi' || provider === 'qwen'
+  )) {
     const cfg = readConfig();
     const extra: Record<string, string> = {};
     // 1) BYOK keys — LEAST-PRIVILEGE (Pam/Jim NIT-2): inject ONLY the key for the
@@ -2666,9 +2678,12 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
     const modelSlug = modelIdx >= 0 ? (opts.args?.[modelIdx + 1] ?? '') : '';
     const prefix = modelSlug.includes('/') ? modelSlug.split('/')[0].toLowerCase() : '';
     const PREFIX_BACKEND: Record<string, string> = {
-      anthropic: 'anthropic', openai: 'openai', google: 'google', gemini: 'google', groq: 'groq', openrouter: 'openrouter'
+      anthropic: 'anthropic', openai: 'openai', google: 'google', gemini: 'google',
+      deepseek: 'deepseek', groq: 'groq', openrouter: 'openrouter'
     };
-    const scoped = PREFIX_BACKEND[prefix];
+    // Official Gemini CLI has no provider/model prefix in its usual model ids;
+    // its product id itself is sufficient to restrict injection to the Google key.
+    const scoped = provider === 'gemini' ? 'google' : PREFIX_BACKEND[prefix];
     const backends = scoped ? [scoped] : Object.keys(BACKEND_KEY_ENV);
     for (const backend of backends) {
       const key = integrations.getSecret(providerKeyRef(backend));
@@ -2678,26 +2693,29 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
       // GEMINI_API_KEY — inject both so google/* authenticates (Jim NIT #1).
       if (backend === 'google') extra.GOOGLE_GENERATIVE_AI_API_KEY = key;
     }
+    // Gemini CLI otherwise opens its first-run auth chooser even when
+    // GEMINI_API_KEY is present; that chooser renders the credential in the PTY.
+    // Pin the official auth type through a higher-precedence system-settings
+    // overlay. The file contains only the auth method, never the key itself.
+    if (provider === 'gemini' && extra.GEMINI_API_KEY && opts.env?.GEMINI_CLI_HOME) {
+      const authSettings = join(opts.env.GEMINI_CLI_HOME, '.gemini', 'munder-system-settings.json');
+      mkdirSync(dirname(authSettings), { recursive: true });
+      writeFileSync(authSettings, JSON.stringify(geminiApiKeySystemSettings(), null, 2), {
+        encoding: 'utf8',
+        mode: 0o600
+      });
+      extra.GEMINI_CLI_SYSTEM_SETTINGS_PATH = authSettings;
+    }
     // 2) Floor auto-state for pi's bundled extension auto-allow (guardrail #5): it
     //    only auto-approves tool calls when this is '1' (i.e. floor auto mode on).
     extra.HIVE_AUTO_APPROVE = cfg.autoMode ? '1' : '0';
     // 3) OpenCode's auto-approve + local provider live in its single config-injection
     //    env var, built dynamically so permission:allow is GATED on autoMode (#2).
-    if (provider === 'opencode') {
-      const oc: Record<string, unknown> = { autoupdate: false };
-      if (cfg.autoMode) oc.permission = { edit: 'allow', bash: 'allow', webfetch: 'allow' };
+    if (provider === 'opencode' || provider === 'deepseek') {
       const baseUrl = cfg.providerBaseUrls?.opencode;
-      if (baseUrl) {
-        // Register the model id the user actually selects (the part after 'local/')
-        // so `--model local/<id>` resolves; default to 'local'. Without this the
-        // dropdown's `local/llama3` failed against a config that only declared model
-        // 'local' (Jim verify-opencode MUST-FIX #2).
-        const localModel = (prefix === 'local' && modelSlug.slice(6)) || 'local';
-        oc.provider = {
-          local: { npm: '@ai-sdk/openai-compatible', name: 'Local (self-hosted)', options: { baseURL: baseUrl }, models: { [localModel]: { name: localModel } } }
-        };
-      }
-      extra.OPENCODE_CONFIG_CONTENT = JSON.stringify(oc);
+      extra.OPENCODE_CONFIG_CONTENT = JSON.stringify(
+        buildOpenCodeRuntimeConfig(cfg.autoMode, baseUrl, modelSlug)
+      );
     }
     opts.env = { ...(opts.env ?? {}), ...extra };
   }
@@ -2780,7 +2798,7 @@ ipcMain.handle('dialog:chooseFolder', async (evt) => {
   if (!win) return { ok: false as const, error: 'no window' };
   const res = await dialog.showOpenDialog(win, {
     properties: ['openDirectory', 'createDirectory'],
-    title: 'Pick a folder'
+    title: t('main.pickFolder')
   });
   if (res.canceled || res.filePaths.length === 0) return { ok: false as const, error: 'cancelled' };
   return { ok: true as const, path: res.filePaths[0] };
@@ -3289,7 +3307,7 @@ ipcMain.handle('kg:addFiles', async (evt) => {
   if (!win) return { ok: false as const, error: 'no window' };
   const res = await dialog.showOpenDialog(win, {
     properties: ['openFile', 'multiSelections'],
-    title: 'Add documents to the Knowledge Graph'
+    title: t('main.addKnowledgeDocuments')
   });
   if (res.canceled || res.filePaths.length === 0) return { ok: false as const, error: 'cancelled' };
   const results = res.filePaths.map((srcPath) => {
@@ -3312,10 +3330,10 @@ ipcMain.handle('dialog:attachFiles', async (evt) => {
   if (!win) return { ok: false as const, error: 'no window' };
   const res = await dialog.showOpenDialog(win, {
     properties: ['openFile', 'multiSelections'],
-    title: 'Attach images or files',
+    title: t('main.attachFiles'),
     filters: [
-      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'heic', 'tiff', 'avif'] },
-      { name: 'All Files', extensions: ['*'] }
+      { name: t('main.images'), extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'heic', 'tiff', 'avif'] },
+      { name: t('main.allFiles'), extensions: ['*'] }
     ]
   });
   if (res.canceled || res.filePaths.length === 0) return { ok: false as const, error: 'cancelled' };

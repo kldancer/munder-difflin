@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PixelPanel } from './PixelPanel';
 import { PixelButton } from './PixelButton';
 import { SpritePortrait } from './SpritePortrait';
@@ -46,7 +47,7 @@ const ossLink: CSSProperties = { color: 'var(--cth-ink-900)', textDecoration: 'u
 
 // One-click briefing templates — fill Description + Goal with a sharp, ready-to-run
 // role so a user isn't staring at a blank field (item 7).
-const DESCRIPTION_TEMPLATES: { label: string; description: string; goal: string }[] = [
+const DESCRIPTION_TEMPLATES_EN: { label: string; description: string; goal: string }[] = [
   {
     label: 'Repo janitor',
     description: 'keeps the codebase tidy and healthy',
@@ -74,6 +75,36 @@ const DESCRIPTION_TEMPLATES: { label: string; description: string; goal: string 
   }
 ];
 
+/** W4 — Chinese role contracts are one-click form prefills only. Selecting one
+ * never spawns an agent; the operator still reviews provider/model/cwd/command. */
+const DESCRIPTION_TEMPLATES_ZH: typeof DESCRIPTION_TEMPLATES_EN = [
+  {
+    label: '产品经理',
+    description: '中文产品经理，负责需求边界、验收标准与优先级',
+    goal: '始终用中文澄清目标、非目标、用户价值、依赖与验收标准。先核对现有事实，再把工作拆成可独立验收的任务；不得代替技术角色修改实现，遇到范围或业务冲突时升级给 god。'
+  },
+  {
+    label: '架构师',
+    description: '中文架构师，负责接口、依赖方向与演进边界',
+    goal: '始终用中文给出少量可证伪方案，依据真实代码和业务所有权选择最小设计。明确接口、数据流、失败语义、迁移与测试边界；不做无合同的重构，跨 Lane 决策提交 god 复核。'
+  },
+  {
+    label: '开发工程师',
+    description: '中文开发工程师，负责有界实现与适用验证',
+    goal: '始终用中文报告进展。按任务合同实现最小正确改动，保护现有修改，只触碰声明的写集合；运行适用测试并回报实现、验证、风险和下一步，禁止自行扩大范围。'
+  },
+  {
+    label: '测试工程师',
+    description: '中文测试工程师，负责可复现验证与运行证据',
+    goal: '始终用中文设计并执行最小反馈环，覆盖正常路径、失败路径、恢复和兼容性。只记录可复现事实与收据，不修改产品实现；发现失败时给出精确输入、期望、实际与最小复现。'
+  },
+  {
+    label: '审查员',
+    description: '中文审查员，负责正确性、安全与 Gate 关闭复核',
+    goal: '始终用中文进行只读审查，按严重度列出带路径和行号的可执行发现，核对合同、实现、测试、真实运行与收据是否闭合。没有发现时明确说明剩余风险，不替代实现角色直接改代码。'
+  }
+];
+
 // Copy-paste prompt the user hands to any AI to generate a hire manifest. It pins
 // the exact JSON shape the importer accepts and ends with a fill-in section so the
 // user adds their own details (item 7). Kept in sync with the HireManifest schema
@@ -89,6 +120,7 @@ Return EXACTLY this shape (omit optional fields you don't need; keep the spec st
   "name": "Jim",
   "description": "one-line role — what this agent is for",
   "goal": "standing directive injected on every prompt — specific and outcome-oriented",
+  "replyLanguage": "zh-CN",
   "provider": "claude",
   "model": "claude-opus-4-8[1m]",
   "capabilities": ["code-review", "docs"],
@@ -98,13 +130,13 @@ Return EXACTLY this shape (omit optional fields you don't need; keep the spec st
 }
 
 Rules:
-- "provider" MUST be one of: claude | codex | antigravity. "model" must be a real model id for that provider (e.g. claude-opus-4-8[1m], gpt-5-codex, "Gemini 3.1 Pro (High)").
+- "provider" MUST be one of: claude | codex | antigravity | gemini | deepseek. "model" must be a real model id for that provider.
 - Do NOT include shell commands or any flags beyond these fields.
 - Make "description" + "goal" concrete enough that the agent knows exactly what to do on its first turn.
 
 --- ADD YOUR DETAILS BELOW (the AI should use these) ---
 Role / what I want this agent to do:
-Preferred engine (claude / codex / antigravity), if any:
+Preferred engine (claude / codex / antigravity / gemini / deepseek), if any:
 Repos, tools, style, or constraints to respect:
 `;
 
@@ -126,7 +158,8 @@ function basename(path: string): string {
 }
 
 function uniqueId(name: string): string {
-  return `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`;
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'agent';
+  return `${slug}-${Date.now().toString(36)}`;
 }
 
 export interface AddAgentModalProps {
@@ -138,6 +171,21 @@ export interface AddAgentModalProps {
 }
 
 export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModalProps) {
+  const { t } = useTranslation();
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const compactLayout = viewportWidth < 520;
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const a = (key: string) => t(`addAgent.${key}`);
+  const r = (key: string, options?: Record<string, unknown>) => t(`residual.${key}`, {
+    ...options,
+    defaultValue: key === 'importJsonGuide' && t('addAgent.title') === '添加 Agent'
+      ? '复制到 Claude/ChatGPT/Gemini，填写底部详情，然后将 JSON 回复保存为 .json 文件并在此导入。'
+      : undefined
+  });
   const addAgent = useStore(s => s.addAgent);
   // A validated hire manifest (deep link / file import) seeds the form. Manifests
   // NEVER auto-spawn — the human reviews every field (esp. the command) first.
@@ -208,6 +256,9 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   };
   const preset = providerPreset(provider);
   const [goal, setGoal] = useState(pendingHire?.goal ?? '');
+  const [replyLanguage, setReplyLanguage] = useState<'zh-CN' | 'en-US'>(
+    pendingHire?.replyLanguage ?? config.locale
+  );
   const [isolate, setIsolate] = useState(pendingHire?.isolate ?? false);
   // #2 — optional Claude session id to continue. When set, the spawn seeds that
   // session's transcript into the cwd's project dir and launches `--resume`.
@@ -303,6 +354,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
     setCommand(hireCommand(m));
     if (m.description) setDescription(m.description);
     setGoal(m.goal ?? '');
+    setReplyLanguage(m.replyLanguage ?? config.locale);
     setIsolate(m.isolate ?? false);
   };
 
@@ -317,9 +369,9 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
     setError(undefined);
     // A required field can live in a section the user hasn't opened, so jump to
     // the offending section as we surface the error — the field is never hidden.
-    if (!name.trim()) { setError('Name is required'); setSection('identity'); return; }
-    if (!cwd) { setError('Pick a folder first'); setSection('workspace'); return; }
-    if (!command.trim()) { setError('Command is required'); setSection('engine'); return; }
+    if (!name.trim()) { setError(a('nameRequired')); setSection('identity'); return; }
+    if (!cwd) { setError(a('folderRequired')); setSection('workspace'); return; }
+    if (!command.trim()) { setError(a('commandRequired')); setSection('engine'); return; }
 
     setBusy(true);
     const id = uniqueId(name);
@@ -350,12 +402,13 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
         cwd,
         role: description.trim() || undefined,
         // A hire manifest may carry validated capability tags (routing hints).
-        capabilities: hireMeta?.capabilities
+        capabilities: hireMeta?.capabilities,
+        replyLanguage
       }
     });
     if (!spawnRes.ok) {
       setBusy(false);
-      setError(spawnRes.error ?? 'spawn failed');
+      setError(spawnRes.error ?? a('spawnFailed'));
       return;
     }
     // #2 — the requested resume session id wasn't found anywhere; main fell back
@@ -378,6 +431,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
       tmuxTarget: '',
       cwd: spawnedCwd,
       goal: goal.trim() || undefined,
+      replyLanguage,
       status: 'idle',
       action: resuming && spawnRes.resumeNotFound ? 'session not found — fresh start' : 'starting up',
       progress: 0,
@@ -427,10 +481,10 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
         zIndex: 500
       }}
     >
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 940, maxWidth: '95vw' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: compactLayout ? 'calc(100vw - 16px)' : 940, maxWidth: compactLayout ? 'none' : '95vw' }}>
         <PixelPanel
           variant="dialog"
-          title="ADD AGENT"
+          title={a('title')}
           style={{ padding: 16 }}
           noPadding
         >
@@ -440,7 +494,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
               hire-import review banner, the error, and the footer stay pinned
               around the section pane. maxHeight keeps the dialog within the
               viewport (title bar stays pinned). */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16, maxHeight: '86vh', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: compactLayout ? 12 : 16, maxHeight: '86vh', overflowY: 'auto', overflowX: 'hidden' }}>
             {hireMeta && (
               <div style={{
                 padding: '6px 10px',
@@ -451,13 +505,13 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                 display: 'flex', flexDirection: 'column', gap: 2
               }}>
                 <span>
-                  📋 hire imported: <strong>{hireMeta.name}</strong>
+                  📋 {a('imported')} <strong>{hireMeta.name}</strong>
                   {hireMeta.author ? <> · by {hireMeta.author}</> : null}
                 </span>
-                <span>review every field — especially the command — before spawning.</span>
+                <span>{a('review')}</span>
                 {hireMeta.commandFlags && hireMeta.commandFlags.length > 0 && (
                   <span style={{ display: 'flex', gap: 4, alignItems: 'baseline', flexWrap: 'wrap', marginTop: 2 }}>
-                    <span style={{ fontSize: 12 }}>⚠️ flags this hire appends to the command:</span>
+                    <span style={{ fontSize: 12 }}>{r('flags')}</span>
                     {hireMeta.commandFlags.map((f, i) => (
                       <code
                         key={`${f}-${i}`}
@@ -477,7 +531,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                 )}
                 {hireMeta.skills && hireMeta.skills.length > 0 && (
                   <span style={{ display: 'flex', gap: 4, alignItems: 'baseline', flexWrap: 'wrap', marginTop: 2 }}>
-                    <span style={{ fontSize: 12 }}>skills this hire activates:</span>
+                    <span style={{ fontSize: 12 }}>{r('skills')}</span>
                     {hireMeta.skills.map((s) => (
                       <code
                         key={s}
@@ -506,7 +560,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 2 }}>
                       {safe.length > 0 && (
                         <span style={{ display: 'flex', gap: 4, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 12 }}>MCP servers (safe, pre-enabled):</span>
+                          <span style={{ fontSize: 12 }}>{r('mcpSafe')}</span>
                           {safe.map((id) => (
                             <code key={id} style={{
                               fontFamily: 'var(--cth-font-mono)', fontSize: 12, padding: '0 4px',
@@ -519,7 +573,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                       )}
                       {consent.length > 0 && (
                         <span style={{ display: 'flex', gap: 4, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 12 }}>⚠️ MCP (needs your consent — NOT auto-enabled):</span>
+                          <span style={{ fontSize: 12 }}>{r('mcpConsent')}</span>
                           {consent.map((id) => (
                             <code key={id} style={{
                               fontFamily: 'var(--cth-font-mono)', fontSize: 12, padding: '0 4px',
@@ -529,7 +583,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                             }}>{id}</code>
                           ))}
                           <span style={{ fontSize: 11, color: 'var(--cth-ink-700)' }}>
-                            — enable in Settings → MCP after reviewing
+                            {r('reviewSettings')}
                           </span>
                         </span>
                       )}
@@ -540,10 +594,10 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
             )}
 
             {/* sidebar index + the active section's fields */}
-            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', flexDirection: compactLayout ? 'column' : 'row', gap: compactLayout ? 10 : 16, alignItems: 'flex-start' }}>
               {/* LEFT — section index. Capabilities isn't a nav item: it isn't a
                   user field, it rides the imported hire manifest (banner above). */}
-              <nav style={{ width: 168, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <nav style={{ width: compactLayout ? '100%' : 168, flexShrink: 0, display: 'flex', flexDirection: compactLayout ? 'row' : 'column', gap: 4, overflowX: compactLayout ? 'auto' : 'visible', paddingBottom: compactLayout ? 4 : 0 }}>
                 {SECTIONS.map((s, i) => {
                   const active = section === s.key;
                   return (
@@ -551,7 +605,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                       key={s.key}
                       onClick={() => setSection(s.key)}
                       style={{
-                        textAlign: 'left', padding: '6px 9px 5px', border: 'none', cursor: 'pointer',
+                        textAlign: 'left', padding: '6px 9px 5px', border: 'none', cursor: 'pointer', minWidth: compactLayout ? 150 : undefined,
                         background: active ? `var(--cth-${accent}-light)` : 'var(--cth-cream-100)',
                         boxShadow: active
                           ? 'inset 0 0 0 1.5px var(--cth-ink-500)'
@@ -565,10 +619,10 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                         display: 'flex', alignItems: 'baseline', gap: 6
                       }}>
                         <span style={{ color: active ? 'var(--cth-ink-900)' : 'var(--cth-ink-500)' }}>{i + 1}</span>
-                        {s.label}
+                        {a(s.key)}
                       </span>
                       <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 11, color: 'var(--cth-ink-500)' }}>
-                        {s.hint}
+                        {a(`${s.key}Hint`)}
                       </span>
                     </button>
                   );
@@ -579,16 +633,16 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
               <div style={{ flex: 1, minWidth: 0, minHeight: 260, display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {section === 'identity' && (
                   <>
-                    <Row label="Name">
+                    <Row label={a('name')}>
                       <input
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        placeholder="Ada"
+                        placeholder={a('name')}
                         style={inputStyle}
                       />
                     </Row>
 
-                    <Row label="Character">
+                    <Row label={a('character')}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {OFFICE_CAST.map(c => (
                           <button
@@ -615,8 +669,8 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                       </div>
                     </Row>
 
-                    <Row label="Color">
-                      <div style={{ display: 'flex', gap: 6 }}>
+                    <Row label={a('color')}>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {ACCENTS.map(a => (
                           <button
                             key={a}
@@ -640,14 +694,14 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
 
                 {section === 'workspace' && (
                   <>
-                    <Row label="Project">
+                    <Row label={a('project')}>
                       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
                         <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>
-                          {repos.length > 0 ? 'Pick a project, or add a new one:' : 'No projects yet — add one to get started:'}
+                          {repos.length > 0 ? a('projectPrompt') : a('noProjects')}
                         </span>
                         <button
                           onClick={addProject}
-                          title="Pick a folder and register it as a project"
+                          title={r('pickFolderTitle')}
                           style={{
                             flexShrink: 0, padding: '2px 8px 1px', border: 'none', cursor: 'pointer',
                             background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)',
@@ -655,7 +709,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                             display: 'inline-flex', alignItems: 'center', gap: 4
                           }}
                         >
-                          <Icon name="plus" /> add project
+                        <Icon name="plus" /> {a('addProject')}
                         </button>
                       </div>
                       {repos.length > 0 && (
@@ -691,14 +745,14 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                         />
                         <PixelButton variant="secondary" size="md" onClick={pickFolder}>
                           <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                            <Icon name="folder" /> pick
+                          <Icon name="folder" /> {a('pickFolder')}
                           </span>
                         </PixelButton>
                       </div>
                       {cwd.trim() && !repos.includes(cwd.trim()) && (
                         <button
                           onClick={() => registerProject(cwd)}
-                          title="Save this folder to your projects so it's a one-click pick next time"
+                          title={r('saveProjectTitle')}
                           style={{
                             alignSelf: 'flex-start', marginTop: 2,
                             padding: '2px 8px 1px', border: 'none', cursor: 'pointer',
@@ -707,7 +761,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                             display: 'inline-flex', alignItems: 'center', gap: 4
                           }}
                         >
-                          <Icon name="plus" /> save as project
+                          <Icon name="plus" /> {a('saveProject')}
                         </button>
                       )}
                     </Row>
@@ -721,16 +775,16 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                         style={{ width: 16, height: 16, cursor: resuming ? 'not-allowed' : 'pointer' }}
                       />
                       <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 13, color: 'var(--cth-ink-900)' }}>
-                        Git isolation (own worktree)
+                        {a('isolation')}
                       </span>
                     </label>
 
-                    <Row label="Resume session ID (optional)">
+                    <Row label={a('resume')}>
                       <input
                         value={resumeSessionId}
                         onChange={(e) => { setResumeSessionId(e.target.value); setFolderNote(undefined); }}
                         onBlur={resolveFolderFromSession}
-                        placeholder="paste a Claude session id to continue its conversation"
+                        placeholder={a('resumePlaceholder')}
                         style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)', fontSize: 13 }}
                       />
                       {folderNote && (
@@ -740,7 +794,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                       )}
                       {resuming && (
                         <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-700)' }}>
-                          Will resume this session in the chosen folder (git isolation disabled).
+                          {a('resumeHelp')}
                         </span>
                       )}
                     </Row>
@@ -749,7 +803,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
 
                 {section === 'engine' && (
                   <>
-                    <Row label="Provider">
+                    <Row label={a('provider')}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {AGENT_PROVIDER_PRESETS.map((p) => {
                           const active = provider === p.id;
@@ -785,7 +839,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                       </div>
                     </Row>
 
-                    {preset.supportsModel && <Row label="Model">
+                    {preset.supportsModel && <Row label={a('model')}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {(() => {
                           // An imported hire may name a model newer than this picker's
@@ -826,10 +880,10 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                         `ollama/<tag>`; provider slugs are identical across engines)
                         and rebuilds the command. */}
                     {hasOssQuickPicks(provider) && (
-                      <Row label="OSS models">
+                      <Row label={a('ossModels')}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                           <div>
-                            <div style={ossGroupHead}>Local · no key (Ollama / LM Studio)</div>
+                            <div style={ossGroupHead}>{r('localNoKey')}</div>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                               {OSS_LOCAL_PICKS.map((p) => {
                                 const slug = localSlugFor(provider, p.tag);
@@ -848,7 +902,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                             </div>
                           </div>
                           <div>
-                            <div style={ossGroupHead}>Via OSS provider · BYOK</div>
+                            <div style={ossGroupHead}>{r('viaProvider')}</div>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                               {OSS_PROVIDER_PICKS.map((p) => {
                                 const active = (model ?? '') === p.slug;
@@ -869,37 +923,31 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                       </Row>
                     )}
 
-                    {(provider === 'opencode' || provider === 'crush' || provider === 'pi' || provider === 'qwen') && (
+                    {(provider === 'gemini' || provider === 'deepseek' || provider === 'opencode' || provider === 'crush' || provider === 'pi' || provider === 'qwen') && (
                       <div style={{ fontSize: 12, color: 'var(--cth-ink-500)', lineHeight: '16px', margin: '2px 0 6px' }}>
-                        BYOK keys &amp; local endpoints for this engine live in <strong>Settings → AI Engines</strong>.
+                        {r('byokHelp')}
                         {' '}New to local models? Read{' '}
                         <a
                           href={OSS_BLOG_LINKS.openModels}
                           onClick={(e) => { e.preventDefault(); void window.cth.openExternal(OSS_BLOG_LINKS.openModels); }}
                           style={ossLink}
-                        >run on open models</a>
+                        >{r('openModels')}</a>
                         {' '}or{' '}
                         <a
                           href={OSS_BLOG_LINKS.macMini}
                           onClick={(e) => { e.preventDefault(); void window.cth.openExternal(OSS_BLOG_LINKS.macMini); }}
                           style={ossLink}
-                        >set up on a Mac Mini</a>.
+                        >{r('macMini')}</a>.
                         {' '}Live end-to-end is pending real model calls (verify on-device).
                       </div>
                     )}
 
-                    <Row label={config.autoMode && preset.autoFlag ? 'Command (auto mode on)' : 'Command'}>
+                    <Row label={config.autoMode && preset.autoFlag ? a('commandAuto') : a('command')}>
                       <input
                         value={command}
                         onChange={(e) => setCommand(e.target.value)}
                         placeholder={
-                          provider === 'antigravity'
-                            ? 'agy'
-                            : provider === 'codex'
-                              ? 'codex'
-                              : provider === 'custom'
-                                ? 'your-agent-cli'
-                                : 'claude'
+                          provider === 'custom' ? 'your-agent-cli' : preset.defaultCommand
                         }
                         style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)' }}
                       />
@@ -909,9 +957,9 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
 
                 {section === 'briefing' && (
                   <>
-                    <Row label="Templates">
+                    <Row label={a('templates')}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {DESCRIPTION_TEMPLATES.map((t) => (
+                        {(config.locale === 'zh-CN' ? DESCRIPTION_TEMPLATES_ZH : DESCRIPTION_TEMPLATES_EN).map((t) => (
                           <button
                             key={t.label}
                             onClick={() => { setDescription(t.description); setGoal(t.goal); }}
@@ -930,20 +978,31 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                       </div>
                     </Row>
 
-                    <Row label="Description">
+                    <Row label={a('replyLanguage')}>
+                      <select
+                        value={replyLanguage}
+                        onChange={(e) => setReplyLanguage(e.target.value as 'zh-CN' | 'en-US')}
+                        style={inputStyle}
+                      >
+                        <option value="zh-CN">{a('replyLanguageZh')}</option>
+                        <option value="en-US">{a('replyLanguageEn')}</option>
+                      </select>
+                    </Row>
+
+                    <Row label={a('description')}>
                       <input
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
-                        placeholder="what is this agent for"
+                        placeholder={r('descriptionPlaceholder')}
                         style={inputStyle}
                       />
                     </Row>
 
-                    <Row label="Goal (optional)">
+                    <Row label={a('goal')}>
                       <textarea
                         value={goal}
                         onChange={(e) => setGoal(e.target.value)}
-                        placeholder="long-running directive injected on every prompt"
+                        placeholder={r('goalPlaceholder')}
                         rows={2}
                         style={{ ...inputStyle, fontFamily: 'var(--cth-font-ui)', resize: 'none' }}
                       />
@@ -974,8 +1033,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
             }}>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: '17px' }}>
-                  <strong>Import hire</strong> loads a ready-made agent from a <code style={{ fontFamily: 'var(--cth-font-mono)' }}>.json</code> manifest —
-                  it fills in every field below for you to review. Nothing spawns until you hit <em>spawn</em>.
+                  {a('importExplainer')}
                 </span>
                 <button
                   onClick={() => setShowHirePrompt((v) => !v)}
@@ -987,14 +1045,14 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                     fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-900)'
                   }}
                 >
-                  {showHirePrompt ? 'hide AI prompt' : 'generate one with AI…'}
+                  {showHirePrompt ? a('hidePrompt') : a('generatePrompt')}
                 </button>
               </div>
               {showHirePrompt && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <span style={{ fontSize: 12, color: 'var(--cth-ink-500)', lineHeight: '16px' }}>
                     Copy this into Claude/ChatGPT/Gemini, fill in the details at the bottom, then save
-                    its JSON reply as a <code style={{ fontFamily: 'var(--cth-font-mono)' }}>.json</code> file and import it here.
+                    {r('importJsonGuide')}
                   </span>
                   <textarea
                     readOnly
@@ -1010,7 +1068,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                   />
                   <div>
                     <PixelButton variant="secondary" size="sm" onClick={copyHirePrompt}>
-                      {copiedPrompt ? 'copied ✓' : 'copy prompt'}
+                      {copiedPrompt ? a('copied') : a('copyPrompt')}
                     </PixelButton>
                   </div>
                 </div>
@@ -1018,13 +1076,13 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
             </div>
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
-              <PixelButton variant="secondary" size="md" onClick={importHire} disabled={busy} title="Import a hire manifest (.json)">
-                import hire…
+              <PixelButton variant="secondary" size="md" onClick={importHire} disabled={busy} title={r('importJsonTitle')}>
+                {a('importHire')}
               </PixelButton>
               <div style={{ flex: 1 }} />
-              <PixelButton variant="ghost" size="md" onClick={onClose} disabled={busy}>cancel</PixelButton>
+              <PixelButton variant="ghost" size="md" onClick={onClose} disabled={busy}>{a('cancel')}</PixelButton>
               <PixelButton variant="primary" size="md" onClick={submit} disabled={busy}>
-                {busy ? 'spawning...' : 'spawn'}
+                {busy ? a('spawning') : a('spawn')}
               </PixelButton>
             </div>
           </div>

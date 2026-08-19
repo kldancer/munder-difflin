@@ -18,6 +18,7 @@ import type { HarnessConfig } from './config';
 import type { ControlRegistry } from './control';
 import type { CircuitBreaker } from './breaker';
 import { estimateCostUsd } from './pricing';
+import { t } from './i18n';
 
 interface HookPayload {
   hook_event_name?: string;
@@ -154,6 +155,19 @@ export class HookServer {
     // killing the PTY. session_id is in the payload for a later --resume.
     if (agentId && this.control?.shouldHalt(agentId)) {
       this.emit(agentId, event, p);
+      // Codex deliberately does not support continue:false on PreToolUse; it
+      // treats that output as a failed hook and runs the tool. A deny decision is
+      // supported by both Codex and Claude and keeps the halt fail-closed until a
+      // later Stop/PostToolUse boundary can end the turn cleanly.
+      if (event === 'PreToolUse') {
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: 'Halted by the operator from the floor.'
+          }
+        };
+      }
       return { continue: false, stopReason: 'Halted by the operator from the floor.' };
     }
 
@@ -215,7 +229,7 @@ export class HookServer {
       // path bypassed terminal-draft/HITL safety and could spend credits while a
       // user was answering a question. Inbox files remain durable; the renderer
       // wakes the agent later through its guarded idle-only delivery path.
-      this.notify(agentId ?? 'Agent', 'finished — idle');
+      this.notify(agentId ?? 'Agent', t('main.finishedIdle'));
       this.emit(agentId, event, p);
       return {};
     }
@@ -277,7 +291,7 @@ export class HookServer {
       (p.notification_type === 'idle' ||
         (p.message ?? '').toLowerCase().includes('waiting for your input'))
     ) {
-      this.notify(agentId ?? 'Agent', p.message ?? 'needs your attention');
+      this.notify(agentId ?? 'Agent', p.message ?? t('main.needsAttention'));
     }
 
     // Forward everything else to the renderer so avatars reflect real activity.

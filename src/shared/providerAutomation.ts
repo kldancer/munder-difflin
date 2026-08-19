@@ -89,6 +89,10 @@ const CONTEXT_COMMANDS: Record<AgentProvider, ProviderContextCommands> = {
   // a compaction"). Nothing to type, so: null.
   antigravity: { compact: null, clear: '/clear', compactTakesFocus: false },
 
+  // Official Gemini CLI 0.55.1 exposes /compress and /clear. The compression
+  // command takes no trusted focus suffix in the current command contract.
+  gemini: { compact: '/compress', clear: '/clear', compactTakesFocus: false },
+
   // qwen-code's bundled cli.js, verbatim:
   //   compressCommand = { name:"compress", altNames:["summarize"],
   //     description "Compresses the context by replacing it with a summary." }
@@ -110,6 +114,10 @@ const CONTEXT_COMMANDS: Record<AgentProvider, ProviderContextCommands> = {
   // `/clear` does NOT exist in the binary (zero literals); the fresh-session
   // verb is `/new` — matched exactly (`t.trim().toLowerCase()==="/new"`).
   opencode: { compact: '/compact', clear: '/new', compactTakesFocus: false },
+
+  // DeepSeek runs in OpenCode's TUI, so it intentionally shares OpenCode's
+  // context command surface while retaining a distinct product provider id.
+  deepseek: { compact: '/compact', clear: '/new', compactTakesFocus: false },
 
   // Crush has NO typed slash commands at all. Its own binary strings show
   // "Summarize Session" / "New Session" as ctrl+p COMMAND-PALETTE rows, and the
@@ -220,6 +228,8 @@ export function terminalReadySettleMs(provider: AgentProvider): number {
     case 'kimi': return 650;
     case 'grok': return 500;
     case 'codex': return 500;
+    case 'gemini': return 650;
+    case 'deepseek': return 500;
     default: return 400;
   }
 }

@@ -12,6 +12,7 @@ import { css } from '@codemirror/lang-css';
 import { yaml } from '@codemirror/lang-yaml';
 import { Icon } from './Icon';
 import { PixelButton } from './PixelButton';
+import { useTranslation } from 'react-i18next';
 
 // ─── Theme matching CTH palette ─────────────────────────────────────────────
 const cthEditorTheme = EditorView.theme({
@@ -77,6 +78,7 @@ export interface CodeEditorProps {
 export function CodeEditor({
   root, filePath, fullscreen, onToggleFullscreen, onCopyPath
 }: CodeEditorProps) {
+  const { t } = useTranslation();
   const [content, setContent] = useState<string>('');
   const [originalContent, setOriginalContent] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -161,13 +163,13 @@ export function CodeEditor({
           textTransform: 'uppercase', letterSpacing: 1,
           color: 'var(--cth-ink-700)'
         }}>
-          No file open
+          {t('ide.noFile')}
         </div>
         <div style={{
           fontFamily: 'var(--cth-font-ui)', fontSize: 13,
           color: 'var(--cth-ink-500)'
         }}>
-          Pick a file from the tree to view it here.
+          {t('ide.pickFile')}
         </div>
       </div>
     );
@@ -195,22 +197,22 @@ export function CodeEditor({
         {onCopyPath && (
           <button
             onClick={onCopyPath}
-            title="Copy absolute path"
+            title={t('ide.copyAbsolutePath')}
             style={editorBtn}
-          >copy path</button>
+          >{t('ide.copyPath')}</button>
         )}
         <button
           onClick={save}
           disabled={!dirty || saveState === 'saving'}
-          title="Save (Cmd-S)"
+          title={t('ide.saveTitle')}
           style={{ ...editorBtn, opacity: dirty ? 1 : 0.5 }}
         >
-          {saveState === 'saving' ? '...' : saveState === 'saved' ? 'saved' : saveState === 'error' ? 'err' : 'save'}
+          {saveState === 'saving' ? t('ide.saving') : saveState === 'saved' ? t('ide.saved') : saveState === 'error' ? t('ide.error') : t('ide.save')}
         </button>
         {onToggleFullscreen && (
           <button
             onClick={onToggleFullscreen}
-            title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'}
+            title={fullscreen ? t('ide.exitFullscreen') : t('ide.fullscreen')}
             style={editorBtn}
           >
             <Icon name={fullscreen ? 'minimize' : 'expand'} />
@@ -221,7 +223,7 @@ export function CodeEditor({
       {/* Body */}
       <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
         {loading ? (
-          <div style={{ padding: 12, color: 'var(--cth-ink-500)' }}>loading…</div>
+          <div style={{ padding: 12, color: 'var(--cth-ink-500)' }}>{t('ide.loading')}</div>
         ) : error ? (
           <div style={{ padding: 12, color: 'var(--cth-coral)' }}>{error}</div>
         ) : (
@@ -250,7 +252,7 @@ export function CodeEditor({
         }}>
           <PixelButton variant="secondary" size="sm" onClick={onToggleFullscreen}>
             <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-              <Icon name="minimize" /> exit fullscreen
+              <Icon name="minimize" /> {t('ide.exitFullscreen')}
             </span>
           </PixelButton>
         </div>

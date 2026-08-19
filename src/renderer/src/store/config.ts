@@ -210,6 +210,13 @@ export const ANTIGRAVITY_MODELS: ModelOption[] = [
   { id: 'GPT-OSS 120B (Medium)', label: 'GPT-OSS 120B' }
 ];
 
+/** Official Gemini CLI accepts arbitrary Google model ids through `--model`.
+ * Keep the catalog deliberately small: the CLI default is the durable choice,
+ * while the editable command remains the authority as Google's catalog moves. */
+export const GEMINI_MODELS: ModelOption[] = [
+  { id: undefined, label: 'CLI default' }
+];
+
 /** Models offered when an agent runs on qwen-code (`qwen`), the proxy-bridge CLI
  *  driving an OpenAI-compatible endpoint. Starting suggestions only (editable
  *  command field). // TODO-verify the live list (`qwen` model ids). */
@@ -239,6 +246,13 @@ export const OPENCODE_MODELS: ModelOption[] = [
   { id: 'openrouter/anthropic/claude-sonnet-4.5', label: 'Claude Sonnet 4.5 (OpenRouter)' },
   { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro (Google)' },
   { id: 'local/llama3', label: 'Local · OpenAI-compatible (set base-URL)' }
+];
+
+/** Current DeepSeek API models exposed through OpenCode. The deprecated
+ * deepseek-chat/deepseek-reasoner aliases are intentionally absent. */
+export const DEEPSEEK_MODELS: ModelOption[] = [
+  { id: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+  { id: 'deepseek/deepseek-v4-flash', label: 'DeepSeek V4 Flash' }
 ];
 
 /** Models offered when an agent runs on Crush (`crush`). Crush's `--model` takes a
@@ -322,8 +336,10 @@ export function modelsForProvider(provider: AgentProvider): ModelOption[] {
   if (provider === 'grok') return GROK_MODELS;
   if (provider === 'kimi') return KIMI_MODELS;
   if (provider === 'antigravity') return ANTIGRAVITY_MODELS;
+  if (provider === 'gemini') return GEMINI_MODELS;
   if (provider === 'qwen') return QWEN_MODELS;
   if (provider === 'opencode') return OPENCODE_MODELS;
+  if (provider === 'deepseek') return DEEPSEEK_MODELS;
   if (provider === 'crush') return CRUSH_MODELS;
   if (provider === 'pi') return PI_MODELS;
   if (provider === 'copilot') return COPILOT_MODELS;

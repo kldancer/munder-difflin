@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AgentCard } from './AgentCard';
 import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
@@ -13,6 +14,7 @@ export interface AgentStripProps {
 }
 
 export function AgentStrip({ config }: AgentStripProps) {
+  const { t } = useTranslation();
   const agents = useStore(s => s.agents);
   const restorableAgents = useStore(s => s.restorableAgents);
   const selectedId = useStore(s => s.selectedId);
@@ -181,11 +183,11 @@ export function AgentStrip({ config }: AgentStripProps) {
                     <span style={{
                       fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
                       color: 'var(--cth-ink-500)'
-                    }}>PRIVATE NOTE · {a.name.toUpperCase()}</span>
+                    }}>{t('extra.privateNote', { name: a.name.toUpperCase() })}</span>
                     <button
                       onClick={() => setNoteEditId(null)}
-                      title="Done"
-                      aria-label="Close note editor"
+                      title={t('agent.done')}
+                      aria-label={t('agent.closeNote')}
                       style={{
                         flexShrink: 0, width: 18, height: 18, padding: 0, lineHeight: 1,
                         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -204,8 +206,8 @@ export function AgentStrip({ config }: AgentStripProps) {
                     value={a.note ?? ''}
                     onChange={(e) => setAgentNote(a.id, e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Escape') setNoteEditId(null); }}
-                    placeholder="one line per bullet…"
-                    aria-label={`Note for ${a.name}`}
+                    placeholder={t('agent.notePlaceholder')}
+                    aria-label={t('agent.noteFor', { name: a.name })}
                     style={{
                       width: '100%', padding: '6px 8px',
                       border: 'none', outline: 'none', resize: 'none', boxSizing: 'border-box',
@@ -216,7 +218,7 @@ export function AgentStrip({ config }: AgentStripProps) {
                     }}
                   />
                   <span style={{ fontSize: 10, color: 'var(--cth-ink-500)' }}>
-                    one line = one bullet · esc to close
+                    {t('extra.noteHelp')}
                   </span>
                 </div>
               </>
@@ -231,7 +233,7 @@ export function AgentStrip({ config }: AgentStripProps) {
         onClick={() => setAddAgentOpen(true)}
       >
         <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' }}>
-          <Icon name="plus" /> add agent
+          <Icon name="plus" /> {t('extra.addAgent')}
         </span>
       </PixelButton>
       {/* ONE restore control, pinned to the strip's right edge. Busy (manual OR
@@ -244,8 +246,8 @@ export function AgentStrip({ config }: AgentStripProps) {
           ref={restoreBtnRef}
           style={{ alignSelf: 'center', flexShrink: 0, marginLeft: 'auto' }}
           title={restoreBusy
-            ? "Your previous session's agents are being respawned with their original ids, so memory and inboxes reattach."
-            : `Previous session: ${restorableAgents.map((a: Agent) => a.name).join(', ')}`}
+            ? t('extra.restoringTip')
+            : t('extra.previousSession', { names: restorableAgents.map((a: Agent) => a.name).join(', ') })}
         >
           <PixelButton
             variant="primary"
@@ -255,7 +257,7 @@ export function AgentStrip({ config }: AgentStripProps) {
           >
             <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' }}>
               <Icon name="play" />
-              {restoreBusy ? 'restoring your team…' : `restore team (${restorableAgents.length}) ▴`}
+              {restoreBusy ? t('extra.restoring') : t('extra.restoreTeam', { count: restorableAgents.length })}
             </span>
           </PixelButton>
         </span>
@@ -279,7 +281,7 @@ export function AgentStrip({ config }: AgentStripProps) {
               fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
               color: 'var(--cth-ink-500)', textTransform: 'uppercase'
             }}>
-              previous session
+              {t('extra.previousSessionLower')}
             </span>
             {/* Per-agent dismiss wires straight to removeRestorableAgent
                 (filters + persistRestorable), so a dismissed agent never
@@ -287,7 +289,7 @@ export function AgentStrip({ config }: AgentStripProps) {
             {restorableAgents.map((a: Agent) => (
               <span
                 key={a.id}
-                title={`${a.name} — restorable from last session`}
+                title={t('agent.restorable', { name: a.name })}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   height: 26, padding: '0 4px 0 8px',
@@ -304,8 +306,8 @@ export function AgentStrip({ config }: AgentStripProps) {
                 </span>
                 <button
                   onClick={() => useStore.getState().removeRestorableAgent(a.id)}
-                  title={`Dismiss ${a.name} — remove permanently from the restore list`}
-                  aria-label={`Dismiss ${a.name}`}
+                  title={t('agent.dismiss', { name: a.name })}
+                  aria-label={t('agent.dismiss', { name: a.name })}
                   style={{
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                     width: 18, height: 18, padding: 0, lineHeight: 1,

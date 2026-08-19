@@ -18,6 +18,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const net = require('node:net');
+const toml = require('toml');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawn } = require('node:child_process');
@@ -48,7 +49,7 @@ function walk(dir, out = []) {
 /** Sweep every config an installer wrote for commands that invoke one of our
  *  shims. Path-agnostic on purpose, so a new installer cannot be missed. */
 function hookCommandsUnder(home) {
-  const shim = /(cth-hook\.cjs|agy-hook\.cjs|grok-hook\.cjs)/;
+  const shim = /(cth-hook\.cjs|agy-hook\.cjs|gemini-hook\.cjs|grok-hook\.cjs)/;
   const found = [];
   for (const file of walk(home)) {
     let text;
@@ -72,6 +73,63 @@ async function run(cmd, env) {
     child.on('close', (code) => resolve({ code, stderr }));
   });
 }
+
+async function runHook(cmd, env, input) {
+  return new Promise((resolve) => {
+    const child = spawn('/bin/sh', ['-c', cmd], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.stdin.end(JSON.stringify(input));
+    child.on('close', (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
+test('official Gemini gets an isolated home and translated lifecycle hooks', { skip: !POSIX }, async (t) => {
+  const home = tmpHome();
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  const injection = await hive.ensureAgent({ id: 'gem-1', name: 'Gem', provider: 'gemini', cwd: home });
+
+  const geminiHome = path.join(home, 'hive/agents/gem-1/.gemini-cli');
+  assert.equal(injection.env.GEMINI_CLI_HOME, geminiHome);
+  assert.deepEqual(injection.args.slice(0, 1), ['--prompt-interactive']);
+  const settings = JSON.parse(fs.readFileSync(path.join(geminiHome, '.gemini/settings.json'), 'utf8'));
+  for (const event of ['BeforeTool', 'AfterTool', 'BeforeAgent', 'AfterAgent', 'SessionStart', 'SessionEnd', 'PreCompress', 'Notification']) {
+    assert.ok(Array.isArray(settings.hooks[event]), `missing ${event}`);
+  }
+  assert.match(settings.hooks.BeforeTool[0].hooks[0].command, /gemini-hook\.cjs" BeforeTool$/);
+  assert.equal(usesLauncher(settings.hooks.BeforeTool[0].hooks[0].command, launcherIn(home)), true);
+
+  const sock = path.join(home, 'hive', 'hooks.sock');
+  try { fs.unlinkSync(sock); } catch { /* absent */ }
+  const seen = [];
+  const server = net.createServer((conn) => {
+    let buf = '';
+    conn.on('data', (d) => {
+      buf += d;
+      if (!buf.includes('\n')) return;
+      seen.push(JSON.parse(buf.trim()));
+      conn.end(JSON.stringify({
+        hookSpecificOutput: {
+          permissionDecision: 'deny',
+          permissionDecisionReason: '测试拒绝'
+        }
+      }));
+    });
+  });
+  await new Promise((resolve) => server.listen(sock, resolve));
+  t.after(() => server.close());
+
+  const result = await runHook(settings.hooks.BeforeTool[0].hooks[0].command, {
+    PATH: STRIPPED_PATH, HIVE_SOCK: sock, AGENT_ID: 'gem-1', HOME: home
+  }, { session_id: 'gem-session', cwd: home, tool_name: 'run_shell_command', tool_input: { command: 'pwd' } });
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { decision: 'deny', reason: '测试拒绝' });
+  assert.equal(seen[0].hook_event_name, 'PreToolUse');
+  assert.equal(seen[0].session_id, 'gem-session');
+});
 
 test('ensureHive writes an executable bundled-node launcher', async (t) => {
   const home = tmpHome();
@@ -127,12 +185,25 @@ test('every hook installer routes through the launcher — none left on bare nod
 
   fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
   fs.writeFileSync(path.join(home, '.codex/auth.json'), '{"testOnly":true}\n', 'utf8');
+  fs.writeFileSync(path.join(home, '.codex/config.toml'), [
+    'model = "gpt-5.6-sol"',
+    `[projects.${JSON.stringify(path.join(home, 'preserved-project'))}]`,
+    'trust_level = "untrusted"',
+    `[projects.${JSON.stringify(path.join(home, 'second-project'))}]`,
+    'trust_level = "trusted"'
+  ].join('\n'), 'utf8');
+
+  const project = path.join(home, 'project');
+  fs.mkdirSync(project, { recursive: true });
+  execFileSync('git', ['init', '-q'], { cwd: project });
 
   hive.installAgyHooks();
   hive.installGrokHooks();
-  const codexHome = hive.installCodexHooks(path.join(home, 'hive/agents/a1'));
+  const agentDir = path.join(home, 'hive/agents/a1');
+  const codexHome = hive.installCodexHooks(agentDir, project, true);
 
   const codexConfig = fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8');
+  assert.doesNotThrow(() => toml.parse(codexConfig), 'generated Codex config must remain valid TOML');
   for (const event of [
     'PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop',
     'SessionStart', 'UserPromptSubmit', 'PreCompact', 'PostCompact'
@@ -142,6 +213,26 @@ test('every hook installer routes through the launcher — none left on bare nod
   assert.equal((codexConfig.match(/type = "command"/g) ?? []).length, 8);
   assert.equal((codexConfig.match(/timeout = 30/g) ?? []).length, 8);
   assert.equal(fs.existsSync(path.join(codexHome, 'auth.json')), true);
+  assert.match(codexConfig, new RegExp(`\\[projects\\.${JSON.stringify(project).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`));
+  assert.match(codexConfig, /trust_level = "trusted"/);
+  assert.match(codexConfig, /preserved-project/);
+  assert.match(codexConfig, /trust_level = "untrusted"/);
+  const preservedHeader = `[projects.${JSON.stringify(path.join(home, 'preserved-project'))}]`;
+  assert.equal(codexConfig.split(preservedHeader).length - 1, 1, 'TOML project tables must not be duplicated');
+
+  // Regeneration must retain an interactive per-agent trust choice even when
+  // Auto Mode is later off, while never retaining old generated hook tables.
+  fs.appendFileSync(path.join(codexHome, 'config.toml'), [
+    '',
+    `[projects.${JSON.stringify(path.join(home, 'manual-trust'))}]`,
+    'trust_level = "trusted"',
+    ''
+  ].join('\n'));
+  hive.installCodexHooks(agentDir, project, false);
+  const regenerated = fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8');
+  assert.match(regenerated, /manual-trust/);
+  assert.equal((regenerated.match(/\[\[hooks\.PreToolUse\]\]/g) ?? []).length, 1);
+  assert.equal(regenerated.split(preservedHeader).length - 1, 1);
   const ignored = execFileSync('git', [
     'check-ignore', 'agents/a1/.codex/auth.json'
   ], { cwd: path.join(home, 'hive'), encoding: 'utf8' }).trim();

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CommitGraph } from './git/CommitGraph';
 import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
+import { useTranslation } from 'react-i18next';
 
 interface GitCommit {
   sha: string;
@@ -39,6 +40,7 @@ function statusColor(code: string): string {
 }
 
 export function GitTab({ cwd }: GitTabProps) {
+  const { t } = useTranslation();
   const [isRepo, setIsRepo] = useState<boolean | null>(null);
   const [branch, setBranch] = useState<string | null>(null);
   const [detached, setDetached] = useState(false);
@@ -92,7 +94,7 @@ export function GitTab({ cwd }: GitTabProps) {
         padding: 16, textAlign: 'center', color: 'var(--cth-ink-500)',
         fontFamily: 'var(--cth-font-ui)', fontSize: 14
       }}>
-        Not a git repo.<br />Run <code style={{ fontFamily: 'var(--cth-font-mono)' }}>git init</code> in the agent's terminal.
+        {t('git.notRepo')}<br />{t('git.runInit')} <code style={{ fontFamily: 'var(--cth-font-mono)' }}>git init</code> {t('git.inTerminal')}
       </div>
     );
   }
@@ -145,16 +147,16 @@ export function GitTab({ cwd }: GitTabProps) {
       {/* Body — scrollable, contains status + branches + graph */}
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
         {/* Status */}
-        <Section title="status">
+        <Section title={t('git.status')}>
           {status && (
             <>
-              <StatusGroup label="staged" entries={status.staged.map(e => ({ ...e, code: e.index }))} />
-              <StatusGroup label="changes" entries={status.unstaged.map(e => ({ ...e, code: e.worktree }))} />
-              <StatusGroup label="untracked" entries={status.untracked.map(p => ({ path: p, code: '?' }))} />
+              <StatusGroup label={t('git.group.staged')} entries={status.staged.map(e => ({ ...e, code: e.index }))} />
+              <StatusGroup label={t('git.group.changes')} entries={status.unstaged.map(e => ({ ...e, code: e.worktree }))} />
+              <StatusGroup label={t('git.group.untracked')} entries={status.untracked.map(p => ({ path: p, code: '?' }))} />
               {status.staged.length === 0 && status.unstaged.length === 0 && status.untracked.length === 0 && (
                 <div style={{
                   padding: '4px 12px', color: 'var(--cth-ink-500)', fontSize: 13
-                }}>working tree clean</div>
+                }}>{t('git.clean')}</div>
               )}
             </>
           )}
@@ -162,7 +164,7 @@ export function GitTab({ cwd }: GitTabProps) {
 
         {/* Branches */}
         {branches && (branches.local.length > 0 || branches.remote.length > 0) && (
-          <Section title="branches">
+          <Section title={t('git.branches')}>
             <div style={{ padding: '0 8px 8px', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               {branches.local.map(b => (
                 <span key={`l-${b}`} style={{
@@ -189,9 +191,9 @@ export function GitTab({ cwd }: GitTabProps) {
         )}
 
         {/* Graph */}
-        <Section title="log">
+        <Section title={t('git.log')}>
           {log.length > 0 ? <CommitGraph commits={log} currentBranch={branch} /> : (
-            <div style={{ padding: 12, color: 'var(--cth-ink-500)', fontSize: 12 }}>no commits yet</div>
+            <div style={{ padding: 12, color: 'var(--cth-ink-500)', fontSize: 12 }}>{t('git.noCommits')}</div>
           )}
         </Section>
       </div>
@@ -219,6 +221,7 @@ function StatusGroup({ label, entries }: {
   label: string;
   entries: Array<{ path: string; code: string }>;
 }) {
+  const { t } = useTranslation();
   if (entries.length === 0) return null;
   return (
     <div style={{ padding: '4px 0' }}>
@@ -242,10 +245,10 @@ function StatusGroup({ label, entries }: {
             flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             fontFamily: 'var(--cth-font-mono)', fontSize: 13
           }} title={e.path}>{e.path}</span>
-          <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>{statusLabel(e.code)}</span>
+          <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>{t(`git.state.${statusLabel(e.code)}`)}</span>
           <button
             onClick={() => navigator.clipboard.writeText(e.path).catch(() => {})}
-            title="Copy path"
+            title={t('git.copyPath')}
             style={{
               padding: 0, background: 'transparent', border: 'none',
               cursor: 'pointer', color: 'var(--cth-ink-500)'

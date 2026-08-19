@@ -64,6 +64,35 @@ test('an empty first write cannot wipe a roster that is already on disk', () => 
   assert.equal(nextRun.read().agents.length, 1, 'the roster on disk survived');
 });
 
+test('a god-only startup snapshot cannot wipe workers before restore', () => {
+  const home = tmpHome();
+  storeAt(home).write(snapshot([{ id: 'god' }, { id: 'jim' }, { id: 'gemma' }]));
+
+  const nextRun = storeAt(home);
+  const first = nextRun.write(snapshot([{ id: 'god' }]));
+  const retry = nextRun.write(snapshot([{ id: 'god' }]));
+  assert.equal(first.skipped, 'partial-first-write');
+  assert.equal(retry.skipped, 'partial-first-write', 'the guard stays armed across debounce retries');
+  assert.equal(nextRun.read().agents.length, 3);
+
+  assert.equal(nextRun.write(snapshot([{ id: 'god' }, { id: 'jim' }, { id: 'gemma' }])).ok, true);
+  assert.equal(nextRun.write(snapshot([{ id: 'god' }])).ok, true,
+    'after a complete reconciliation, intentional removals are allowed');
+});
+
+test('switching homes does not reuse another home startup-guard state', () => {
+  const one = tmpHome();
+  const two = tmpHome();
+  storeAt(one).write(snapshot([{ id: 'god' }]));
+  storeAt(two).write(snapshot([{ id: 'god' }, { id: 'jim' }]));
+  let current = one;
+  const store = new RosterStore(() => current);
+  assert.equal(store.write(snapshot([{ id: 'god' }])).ok, true);
+  current = two;
+  assert.equal(store.write(snapshot([{ id: 'god' }])).skipped, 'partial-first-write');
+  assert.equal(store.read().agents.length, 2);
+});
+
 test('emptying the roster is allowed once the run has written normally', () => {
   // Deleting every agent is a real thing a user does. Only the FIRST write of a
   // run is suspect; refusing later ones would make deletion impossible.

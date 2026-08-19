@@ -1,5 +1,6 @@
 import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
+import { useTranslation } from 'react-i18next';
 import type { BlockReason } from '@/store/store';
 
 export interface BlockedBannerProps {
@@ -8,6 +9,7 @@ export interface BlockedBannerProps {
 }
 
 export function BlockedBanner({ reason, onAction }: BlockedBannerProps) {
+  const { t } = useTranslation();
   return (
     <div style={{
       background: 'var(--cth-coral-light)',
@@ -24,7 +26,7 @@ export function BlockedBanner({ reason, onAction }: BlockedBannerProps) {
         color: 'var(--cth-ink-900)',
         textTransform: 'uppercase'
       }}>
-        <Icon name="bell" /> needs you
+        <Icon name="bell" /> {t('blocked.needsYou')}
       </div>
       <div style={{
         fontFamily: 'var(--cth-font-ui)',

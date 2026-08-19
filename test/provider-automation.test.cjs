@@ -17,7 +17,7 @@ const {
 // — the queue's one-pending-compact invariant depends entirely on this predicate —
 
 test('isCompactionCommand matches every provider that has a compact verb', () => {
-  for (const p of ['claude', 'codex', 'grok', 'kimi', 'qwen', 'opencode', 'pi', 'copilot']) {
+  for (const p of ['claude', 'codex', 'grok', 'kimi', 'gemini', 'qwen', 'opencode', 'deepseek', 'pi', 'copilot']) {
     const cmd = compactionCommandForProvider(p, '');
     if (!cmd) continue; // provider has no typeable compaction — nothing to dedupe
     assert.equal(isCompactionCommand(cmd), true, `${p}: ${cmd}`);
@@ -55,6 +55,8 @@ test('each provider receives only its supported compaction syntax', () => {
   assert.equal(compactionCommandForProvider('kimi', ''), '/compact');
   assert.equal(compactionCommandForProvider('qwen', ''), '/compress');
   assert.equal(compactionCommandForProvider('opencode', ''), '/compact');
+  assert.equal(compactionCommandForProvider('gemini', ''), '/compress');
+  assert.equal(compactionCommandForProvider('deepseek', ''), '/compact');
   assert.equal(compactionCommandForProvider('pi', ''), '/compact');
 
   // No command we can trust → no keystrokes at all.

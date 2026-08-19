@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PixelButton } from '../PixelButton';
 import { useStore } from '@/store/store';
 import {
@@ -43,6 +44,7 @@ function relTime(ms: number): string {
 }
 
 export function SchedulesSection({ onSummary }: { onSummary?: (s: string) => void }) {
+  const { t } = useTranslation();
   const agents = useStore((s) => s.agents);
   const [missions, setMissions] = useState<ScheduledMission[]>([]);
   const [adding, setAdding] = useState(false);
@@ -60,7 +62,7 @@ export function SchedulesSection({ onSummary }: { onSummary?: (s: string) => voi
 
   useEffect(() => {
     const on = missions.filter((m) => m.enabled).length;
-    onSummary?.(missions.length === 0 ? 'none' : `${on} of ${missions.length} on`);
+    onSummary?.(missions.length === 0 ? t('triggers.off') : `${on} / ${missions.length} ${t('triggers.on')}`);
   }, [missions, onSummary]);
 
   // Optimistic: the list is the truth on screen the moment you click, and the
@@ -93,7 +95,7 @@ export function SchedulesSection({ onSummary }: { onSummary?: (s: string) => voi
 
   return (
     <>
-      {missions.length === 0 && <Muted>Nothing is scheduled yet.</Muted>}
+      {missions.length === 0 && <Muted>{t('triggers.nothingScheduled')}</Muted>}
       {missions.map((m) => (
         <MissionRow
           key={m.id}
@@ -107,36 +109,36 @@ export function SchedulesSection({ onSummary }: { onSummary?: (s: string) => voi
 
       {!adding && (
         <div style={{ marginTop: 8 }}>
-          <PixelButton variant="secondary" size="sm" onClick={() => setAdding(true)}>add a schedule</PixelButton>
+          <PixelButton variant="secondary" size="sm" onClick={() => setAdding(true)}>{t('triggers.addSchedule')}</PixelButton>
         </div>
       )}
       {adding && (
         <SubCard>
-          <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, color: 'var(--cth-ink-500)' }}>NEW SCHEDULE</div>
-          <Field label="LABEL">
+          <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, color: 'var(--cth-ink-500)' }}>{t('triggers.newSchedule')}</div>
+          <Field label={t('triggers.label')}>
             <input
               value={mLabel}
               onChange={(e) => setMLabel(e.target.value)}
-              placeholder="What this run is for"
+              placeholder={t('triggers.labelPlaceholder')}
               style={inputStyle}
             />
           </Field>
-          <Field label="GOES TO">
+          <Field label={t('triggers.goesTo')}>
             <Select value={mTo} onChange={setMTo} style={{ width: '100%' }}>
-              <option value="broadcast">everyone</option>
+              <option value="broadcast">{t('triggers.everyone')}</option>
               <option value="god">Michael</option>
               {agents.filter((a) => !a.isGod).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </Select>
           </Field>
-          <Field label="EVERY">
+          <Field label={t('triggers.every')}>
             <IntervalPicker value={mInterval} onChange={setMInterval} />
           </Field>
-          <Field label="PROMPT">
+          <Field label={t('triggers.body')}>
             <textarea
               value={mBody}
               onChange={(e) => setMBody(e.target.value)}
               rows={3}
-              placeholder="Sent word for word on every run."
+              placeholder={t('triggers.promptPlaceholder')}
               style={textareaStyle}
             />
           </Field>
@@ -165,6 +167,7 @@ function MissionRow({ mission, targetName, agents, onPatch, onDelete }: {
   onPatch: (fields: Partial<ScheduledMission>) => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState(mission.label);
   const [to, setTo] = useState(mission.to);
@@ -236,35 +239,35 @@ function MissionRow({ mission, targetName, agents, onPatch, onDelete }: {
 
       {open && (
         <div style={{ marginTop: 4 }}>
-          <Field label="LABEL">
+          <Field label={t('triggers.label')}>
             <input value={label} onChange={(e) => setLabel(e.target.value)} style={inputStyle} />
           </Field>
-          <Field label="GOES TO">
+          <Field label={t('triggers.goesTo')}>
             <Select value={to} onChange={setTo} style={{ width: '100%' }}>
-              <option value="broadcast">everyone</option>
+              <option value="broadcast">{t('triggers.everyone')}</option>
               <option value="god">Michael</option>
               {agents.filter((a) => !a.isGod).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </Select>
           </Field>
-          <Field label="EVERY">
+          <Field label={t('triggers.every')}>
             <IntervalPicker value={intervalMs} onChange={setIntervalMs} />
-            {heartbeat && <Hint>The beat adapts to how quiet the floor is, so this is the ceiling, not the exact gap.</Hint>}
+            {heartbeat && <Hint>{t('triggers.heartbeatHint')}</Hint>}
           </Field>
-          <Field label="PROMPT">
+          <Field label={t('triggers.body')}>
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={4}
-              placeholder="Sent word for word on every run."
+              placeholder={t('triggers.promptPlaceholder')}
               style={textareaStyle}
             />
           </Field>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
             <PixelButton variant="primary" size="sm" onClick={save} disabled={!dirty || !label.trim()}>
-              {saved && !dirty ? 'saved' : 'save'}
+              {saved && !dirty ? t('triggers.saved') : t('triggers.save')}
             </PixelButton>
             <span style={{ flex: 1 }} />
-            <MiniButton tone="danger" onClick={onDelete}>delete</MiniButton>
+            <MiniButton tone="danger" onClick={onDelete}>{t('triggers.delete')}</MiniButton>
           </div>
         </div>
       )}

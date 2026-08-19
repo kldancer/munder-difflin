@@ -108,6 +108,27 @@ test('a queued operator steer is not swallowed by the roster', async (t) => {
   assert.ok(ctx.includes(steer), 'only one additionalContext exists — the two must merge, not race');
 });
 
+test('halt uses an event-compatible deny at PreToolUse and stops later boundaries', async (t) => {
+  const { hive } = await floor(t);
+  const control = {
+    shouldHalt: () => true,
+    toolDecision: () => ({ deny: false }),
+    takeSteer: () => null
+  };
+  const server = new HookServer(hive, () => null, () => CONFIG, control, undefined);
+
+  const pre = server.handle({ agent_id: 'jim-1', hook_event_name: 'PreToolUse', tool_name: 'Bash' });
+  assert.equal(pre.continue, undefined, 'Codex rejects continue:false on PreToolUse');
+  assert.equal(pre.hookSpecificOutput.permissionDecision, 'deny');
+  assert.match(pre.hookSpecificOutput.permissionDecisionReason, /Halted by the operator/);
+
+  for (const event of ['PostToolUse', 'Stop', 'UserPromptSubmit']) {
+    const res = server.handle({ agent_id: 'jim-1', hook_event_name: event });
+    assert.equal(res.continue, false, `${event} supports a clean turn stop`);
+    assert.match(res.stopReason, /Halted by the operator/);
+  }
+});
+
 test('a corrupt fleet.json degrades to no injection instead of throwing into a hook', async (t) => {
   const { home, hive, fire } = await floor(t);
   snapshot(hive);

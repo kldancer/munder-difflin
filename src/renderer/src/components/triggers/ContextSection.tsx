@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ContextRule, ContextTriggerConfig } from '@shared/triggers';
 import { getContextTrigger, setContextTrigger } from './api';
 import {
@@ -15,6 +16,7 @@ import {
 const WRITE_DEBOUNCE_MS = 400;
 
 export function ContextSection({ onSummary }: { onSummary?: (s: string) => void }) {
+  const { t } = useTranslation();
   const [cfg, setCfg] = useState<ContextTriggerConfig | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -30,7 +32,7 @@ export function ContextSection({ onSummary }: { onSummary?: (s: string) => void 
   useEffect(() => {
     if (!cfg) return;
     const on = [cfg.compact.enabled ? 'compact' : null, cfg.clear.enabled ? 'clear' : null].filter(Boolean);
-    onSummary?.(on.length ? on.join(' + ') : 'both off');
+    onSummary?.(on.length ? on.join(' + ') : t('triggers.bothOff'));
   }, [cfg, onSummary]);
 
   // Optimistic + debounced: the controls answer instantly, and a burst of typing
@@ -45,37 +47,35 @@ export function ContextSection({ onSummary }: { onSummary?: (s: string) => void 
     commit({ ...cfg, [key]: { ...cfg[key], ...fields } });
   };
 
-  if (!cfg) return <Muted>One sec…</Muted>;
+  if (!cfg) return <Muted>{t('triggers.oneSec')}</Muted>;
 
   return (
     <>
       <Muted>
-        A rule fires only when both halves agree: the gap since its last run has passed, AND that
-        agent&apos;s context is at least as full as the bar. A bar of 0% means the clock alone.
+        {t('triggers.contextBlurb')}
       </Muted>
       <div style={{ height: 8 }} />
 
       <RuleCard
-        title="Compact"
-        blurb="Summarises the context so the thread keeps going."
+        title={t('triggers.compact')}
+        blurb={t('triggers.compactBlurb')}
         rule={cfg.compact}
-        messageLabel="EXTRA FOCUS"
-        messageHint="Appended to the provider's compaction command. Empty sends the bare command."
-        messagePlaceholder="What the summary must keep…"
+        messageLabel={t('triggers.extraFocus')}
+        messageHint={t('triggers.compactBlurb')}
+        messagePlaceholder={t('triggers.labelPlaceholder')}
         onPatch={(fields) => patch('compact', fields)}
       />
 
       <RuleCard
-        title="Clear"
-        blurb="Discards the context. Nothing is summarised."
+        title={t('triggers.clear')}
+        blurb={t('triggers.clearBlurb')}
         rule={cfg.clear}
-        messageLabel="COMMAND"
-        messageHint="Sent literally. Empty sends the bare clear command."
+        messageLabel={t('triggers.command')}
+        messageHint={t('triggers.clearBlurb')}
         messagePlaceholder="/clear"
         caution={
           <>
-            Clearing throws context away — it is not a smaller version of compaction. An agent
-            mid-task forgets what it was doing. Leave this off unless you keep context another way.
+            {t('triggers.clearBlurb')}
           </>
         }
         onPatch={(fields) => patch('clear', fields)}
@@ -94,6 +94,7 @@ function RuleCard({ title, blurb, rule, messageLabel, messageHint, messagePlaceh
   caution?: ReactNode;
   onPatch: (fields: Partial<ContextRule>) => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   return (
     <SubCard>
@@ -112,12 +113,12 @@ function RuleCard({ title, blurb, rule, messageLabel, messageHint, messagePlaceh
         <Hint>
           {rule.enabled
             ? <>Every {fmtInterval(rule.everyMs)}, once context passes {rule.minContextPct}%.</>
-            : <>Off.</>}
+            : <>{t('triggers.off')}</>}
         </Hint>
       )}
       {open && (
         <div style={{ marginTop: 4 }}>
-          <Field label="NO SOONER THAN EVERY">
+          <Field label={t('triggers.noSooner')}>
             {/* Main clamps a context cadence to 1 minute … 24 hours, so the
                 picker offers exactly that range and never labels a value it
                 cannot actually store. */}
@@ -128,16 +129,16 @@ function RuleCard({ title, blurb, rule, messageLabel, messageHint, messagePlaceh
               maxMs={86_400_000}
             />
           </Field>
-          <Field label="CONTEXT BAR">
+          <Field label={t('triggers.contextBar')}>
             <PctField value={rule.minContextPct} onChange={(minContextPct) => onPatch({ minContextPct })} />
-            <Hint>How full the window must be before this may run. 0% = time alone.</Hint>
+            <Hint>{t('triggers.contextBlurb')}</Hint>
           </Field>
-          <Field label="BAR ON BIG WINDOWS">
+          <Field label={t('triggers.bigWindows')}>
             <PctField
               value={rule.minContextPctLargeWindow}
               onChange={(minContextPctLargeWindow) => onPatch({ minContextPctLargeWindow })}
             />
-            <Hint>Used on ~1M-token windows, where a smaller slice is still an enormous amount of text.</Hint>
+            <Hint>{t('triggers.contextBlurb')}</Hint>
           </Field>
           <Field label={messageLabel}>
             <textarea

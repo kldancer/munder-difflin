@@ -19,6 +19,7 @@ import { Icon } from '@/components/Icon';
 import { useWorkspaceImage } from '@/hooks/useWorkspaceImage';
 import { formatBytes, isSvgPath } from '@shared/imageTypes';
 import { ideBarStyle, ideTextBtn } from './chrome';
+import { useTranslation } from 'react-i18next';
 
 export interface ImagePreviewProps {
   /** Absolute workspace root the path is confined to. */
@@ -33,6 +34,7 @@ export interface ImagePreviewProps {
 }
 
 export function ImagePreview({ root, rel, onCopyPath, onViewSource }: ImagePreviewProps) {
+  const { t } = useTranslation();
   const img = useWorkspaceImage(root, rel);
   // Fit is the default because the common case is a full-screen screenshot that
   // is far wider than the pane; showing it at 1:1 first would open every tab
@@ -74,11 +76,11 @@ export function ImagePreview({ root, rel, onCopyPath, onViewSource }: ImagePrevi
         </span>
 
         {onViewSource && (
-          <button onClick={onViewSource} title="Open the SVG markup in the editor" style={ideTextBtn}>
-            view source
+        <button onClick={onViewSource} title={t('ideApp.viewImage')} style={ideTextBtn}>
+          {t('ideApp.editor')}
           </button>
         )}
-        <button onClick={onCopyPath} title="Copy absolute path" style={ideTextBtn}>copy path</button>
+        <button onClick={onCopyPath} title={t('ide.copyAbsolutePath')} style={ideTextBtn}>{t('ide.copyPath')}</button>
       </div>
 
       <div style={{
@@ -99,11 +101,11 @@ export function ImagePreview({ root, rel, onCopyPath, onViewSource }: ImagePrevi
         backgroundSize: '16px 16px',
         backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px'
       }}>
-        {img.status === 'loading' && <Centered>loading image…</Centered>}
+        {img.status === 'loading' && <Centered>{t('ideApp.loading')}</Centered>}
         {img.status === 'error' && <Centered tone="error">{img.error}</Centered>}
         {img.status === 'ready' && decodeFailed && (
           <Centered tone="error">
-            could not decode this image — the file may be corrupt or misnamed
+            {t('ideApp.imageError')}
           </Centered>
         )}
         {img.status === 'ready' && !decodeFailed && (

@@ -16,6 +16,7 @@
  * confirmation step in front of anything that writes outside the app.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
 import { useStore } from '@/store/store';
@@ -28,6 +29,7 @@ const SECTIONS: { kind: ToolKind; title: string; blurb: string }[] = [
 ];
 
 function StatusChip({ tool }: { tool: ToolStatus }) {
+  const { t } = useTranslation();
   const ready = tool.found;
   return (
     <span style={{
@@ -37,12 +39,13 @@ function StatusChip({ tool }: { tool: ToolStatus }) {
       boxShadow: `inset 0 0 0 1px ${ready ? 'var(--cth-mint)' : 'var(--cth-ink-300)'}`,
       color: 'var(--cth-ink-900)'
     }}>
-      {ready ? 'READY' : tool.essential ? 'MISSING' : 'NOT SET UP'}
+      {ready ? t('residual.readyStatus', { defaultValue: 'READY' }) : tool.essential ? t('residual.missingStatus', { defaultValue: 'MISSING' }) : t('residual.notSetupStatus', { defaultValue: 'NOT SET UP' })}
     </span>
   );
 }
 
 function ToolRow({ tool }: { tool: ToolStatus }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const copy = () => {
     void navigator.clipboard.writeText(tool.installCommand).then(
@@ -60,12 +63,16 @@ function ToolRow({ tool }: { tool: ToolStatus }) {
           {tool.label.toUpperCase()}
         </span>
         {tool.essential && !tool.found && (
-          <span style={{ fontSize: 10, color: 'var(--cth-ink-500)', flexShrink: 0 }}>recommended</span>
+          <span style={{ fontSize: 10, color: 'var(--cth-ink-500)', flexShrink: 0 }}>{t('residual.recommended')}</span>
         )}
         <StatusChip tool={tool} />
       </div>
 
-      <div style={{ fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: 1.5 }}>{tool.why}</div>
+      <div style={{ fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: 1.5 }}>
+        {tool.id.startsWith('engine:')
+          ? t('setupPanel.engineWhy', { label: tool.label })
+          : t(`setupPanel.tools.${tool.id}.why`, { defaultValue: tool.why })}
+      </div>
 
       {/* Found: show WHERE, so a "ready" claim is verifiable rather than trusted. */}
       {tool.found && tool.path && (
@@ -93,19 +100,19 @@ function ToolRow({ tool }: { tool: ToolStatus }) {
               background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
               border: 'none', cursor: 'pointer', color: 'var(--cth-ink-900)'
             }}
-          >{copied ? 'copied' : 'copy'}</button>
+          >{copied ? t('residual.copied') : t('residual.copy')}</button>
         </div>
       )}
 
       {(tool.note || tool.docsUrl) && (
         <div style={{ fontSize: 11, color: 'var(--cth-ink-500)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {tool.note && <span>{tool.note}</span>}
+          {tool.note && <span>{t(`setupPanel.tools.${tool.id}.note`, { defaultValue: tool.note })}</span>}
           {tool.docsUrl && (
             <a
               href={tool.docsUrl}
               onClick={(e) => { e.preventDefault(); void window.cth.openExternal(tool.docsUrl!); }}
               style={{ color: 'var(--cth-ink-700)' }}
-            >docs →</a>
+            >{t('residual.docs')}</a>
           )}
         </div>
       )}
@@ -114,6 +121,8 @@ function ToolRow({ tool }: { tool: ToolStatus }) {
 }
 
 export function SetupPanel({ onDone }: { onDone?: () => void } = {}) {
+  const { t } = useTranslation();
+  const r = (key: string, options?: Record<string, unknown>) => t(`residual.${key}`, options);
   const [tools, setTools] = useState<ToolStatus[] | null>(null);
   const [busy, setBusy] = useState(false);
   const requestDispatchSeed = useStore((s) => s.requestDispatchSeed);
@@ -148,15 +157,17 @@ export function SetupPanel({ onDone }: { onDone?: () => void } = {}) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 12 }}>PREREQUISITES</div>
+          <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 12 }}>{t('settings.prerequisitesTitle')}</div>
           <div style={{ fontSize: 12, color: 'var(--cth-ink-500)', marginTop: 2 }}>
             {tools === null
-              ? 'Checking what is installed…'
-              : `${readyCount} of ${tools.length} ready${missingEssential.length ? ` · ${missingEssential.length} recommended missing` : ''}`}
+              ? r('checking')
+              : missingEssential.length
+                ? r('readyMissing', { ready: readyCount, total: tools.length, missing: missingEssential.length })
+                : r('ready', { ready: readyCount, total: tools.length })}
           </div>
         </div>
         <PixelButton variant="ghost" size="md" onClick={() => void refresh()} disabled={busy}>
-          {busy ? 'checking…' : 're-check'}
+          {busy ? t('residual.testing') : r('recheck')}
         </PixelButton>
       </div>
 
@@ -169,8 +180,8 @@ export function SetupPanel({ onDone }: { onDone?: () => void } = {}) {
       }}>
         <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: 1.5 }}>
           {missingEssential.length
-            ? <>Michael can install the {missingEssential.length} missing recommended {missingEssential.length === 1 ? 'tool' : 'tools'} for you. This fills in his dispatch box — nothing runs until you press dispatch.</>
-            : <>Everything recommended is installed. Individual engines above are optional — set up only the ones you use.</>}
+            ? r('installMissing', { count: missingEssential.length, toolLabel: r(missingEssential.length === 1 ? 'tool_one' : 'tool_other') })
+            : r('everythingInstalled')}
         </div>
         <PixelButton
           variant="primary"
@@ -179,7 +190,7 @@ export function SetupPanel({ onDone }: { onDone?: () => void } = {}) {
           disabled={missingEssential.length === 0}
         >
           <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-            <Icon name="sparkle" /> ask Michael to set up everything
+            <Icon name="sparkle" /> {r('askMichael')}
           </span>
         </PixelButton>
       </div>
@@ -192,8 +203,10 @@ export function SetupPanel({ onDone }: { onDone?: () => void } = {}) {
             <div style={{
               fontFamily: 'var(--cth-font-display)', fontSize: 10, letterSpacing: 0.5,
               color: 'var(--cth-ink-500)', textTransform: 'uppercase'
-            }}>{section.title}</div>
-            <div style={{ fontSize: 11, color: 'var(--cth-ink-500)', marginTop: -2 }}>{section.blurb}</div>
+            }}>{t(`residual.section_${section.kind}`, { defaultValue: section.title })}</div>
+            <div style={{ fontSize: 11, color: 'var(--cth-ink-500)', marginTop: -2 }}>
+              {t(`setupPanel.sections.${section.kind}`, { defaultValue: section.blurb })}
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {rows.map((t) => <ToolRow key={t.id} tool={t} />)}
             </div>

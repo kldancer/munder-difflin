@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PixelPanel } from './PixelPanel';
 import { PixelButton } from './PixelButton';
 import { PixelBadge } from './PixelBadge';
@@ -115,6 +116,7 @@ export function parseTasks(raw: unknown): HiveTask[] {
  * god), never by the human inserting cards the orchestrator never heard about.
  */
 export function TasksKanban() {
+  const { t: tr } = useTranslation();
   const agents = useStore((s) => s.agents);
   const [tasks, setTasks] = useState<HiveTask[]>([]);
   // Detail view: cards show just the title — clicking one opens the full
@@ -228,11 +230,12 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss }: {
   onOpen: () => void;
   onDismiss: () => void;
 }) {
+  const { t: tr } = useTranslation();
   return (
     <div style={{ position: 'relative', display: 'flex' }}>
       <button
         onClick={onOpen}
-        title="open task details"
+        title={tr('tasks.open')}
         style={{
           flex: 1, minWidth: 0,
           display: 'flex', alignItems: 'stretch', gap: 0, padding: 0,
@@ -255,7 +258,7 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss }: {
           )}
         </span>
         {waitsOnHuman(task) && (
-          <span title="waiting on YOUR answer — see the ASK ME tab" style={{
+          <span title={tr('tasks.waiting')} style={{
             alignSelf: 'center', marginRight: 18, flexShrink: 0,
             fontFamily: 'var(--cth-font-display)', fontSize: 10, padding: '2px 5px 1px',
             background: 'var(--cth-lilac)', color: 'var(--cth-ink-900)',
@@ -266,8 +269,8 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss }: {
       {/* Dismiss — sibling button (not nested) so it never triggers onOpen. */}
       <button
         onClick={(e) => { e.stopPropagation(); onDismiss(); }}
-        title="dismiss this task (removes it from the board)"
-        aria-label="dismiss task"
+        title={tr('tasks.dismiss')}
+        aria-label={tr('tasks.dismissLabel')}
         style={{
           position: 'absolute', top: 0, right: 0, width: 16, height: 16, padding: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1,
@@ -298,6 +301,7 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
   onAssign: () => void;
   onClose: () => void;
 }) {
+  const { t: tr } = useTranslation();
   const col = COLUMNS.find((c) => c.key === task.status) ?? COLUMNS[0];
   // Belt + suspenders: parseTasks normalizes these, but the ledger is a
   // hand-written file — never trust a card's shape at the point of use.
@@ -315,7 +319,7 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
       }}
     >
       <div onClick={(e) => e.stopPropagation()} style={{ width: 720, maxWidth: '94vw', maxHeight: '90vh', display: 'flex' }}>
-        <PixelPanel variant="dialog" title="TASK" noPadding style={{ display: 'flex', flexDirection: 'column', width: '100%', minHeight: 0 }}>
+        <PixelPanel variant="dialog" title={tr('tasks.task')} noPadding style={{ display: 'flex', flexDirection: 'column', width: '100%', minHeight: 0 }}>
           <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0, overflowY: 'auto' }}>
             {/* Title under a status-colored bar */}
             <div style={{ borderLeft: `4px solid ${col.accent}`, paddingLeft: 8 }}>
@@ -332,7 +336,7 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
               }}>{col.label}</span>
               {assigneeName
                 ? <PixelBadge status="working" label={assigneeName} />
-                : <span style={{ fontSize: 11, color: 'var(--cth-ink-300)' }}>unassigned</span>}
+                : <span style={{ fontSize: 11, color: 'var(--cth-ink-300)' }}>{tr('agent.unassigned')}</span>}
               <PriorityDots level={Math.max(1, Math.min(5, task.priority))} />
               <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--cth-ink-500)', fontFamily: 'var(--cth-font-display)' }}>
                 {isNaN(created.getTime()) ? '' : created.toLocaleString()}
@@ -346,7 +350,7 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
               fontFamily: 'var(--cth-font-mono)', fontSize: 12, lineHeight: '18px',
               color: 'var(--cth-ink-900)', whiteSpace: 'pre-wrap', wordBreak: 'break-word'
             }}>
-              {task.description?.trim() || <span style={{ color: 'var(--cth-ink-300)' }}>(no description on this card)</span>}
+              {task.description?.trim() || <span style={{ color: 'var(--cth-ink-300)' }}>{tr('tasks.noDescription')}</span>}
             </div>
 
             {/* The human Q&A trail — every decision documented on the card */}
@@ -424,7 +428,7 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
                   <Icon name="arrow-right" /> assign
                 </span>
               </PixelButton>
-              <PixelButton variant="ghost" size="sm" onClick={onClose}>close</PixelButton>
+              <PixelButton variant="ghost" size="sm" onClick={onClose}>{tr('tasks.close')}</PixelButton>
             </div>
           </div>
         </PixelPanel>

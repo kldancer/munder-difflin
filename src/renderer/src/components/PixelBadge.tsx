@@ -58,6 +58,8 @@ export function PixelBadge({ status, label, style }: PixelBadgeProps) {
         lineHeight: '18px',
         color: 'var(--cth-ink-900)',
         userSelect: 'none',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
         ...style
       }}
     >

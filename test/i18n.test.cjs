@@ -36,7 +36,21 @@ test('missing Chinese resources fall back to English', () => {
 
 test('resource keys stay aligned across shipped locales', () => {
   const instance = createAppI18n('zh-CN');
-  const en = Object.keys(instance.getResourceBundle('en-US', 'translation').common).sort();
-  const zh = Object.keys(instance.getResourceBundle('zh-CN', 'translation').common).sort();
+  const flatten = (value, prefix = '', out = []) => {
+    for (const [key, child] of Object.entries(value)) {
+      const path = prefix ? `${prefix}.${key}` : key;
+      if (child && typeof child === 'object' && !Array.isArray(child)) flatten(child, path, out);
+      else out.push(path);
+    }
+    return out;
+  };
+  const en = flatten(instance.getResourceBundle('en-US', 'translation')).sort();
+  const zh = flatten(instance.getResourceBundle('zh-CN', 'translation')).sort();
   assert.deepEqual(zh, en);
+});
+
+test('resource fragments with the same top-level group are deep-merged', () => {
+  const zh = createTranslator('zh-CN');
+  assert.equal(zh('residual.officeTheme'), '办公室主题');
+  assert.equal(zh('residual.noLiveTerminal').startsWith('此 Agent'), true);
 });

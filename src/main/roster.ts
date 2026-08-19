@@ -42,7 +42,7 @@ export interface RosterSnapshot {
 export interface RosterWriteResult {
   ok: boolean;
   /** Set when the write was deliberately declined; the file is unchanged. */
-  skipped?: 'empty-first-write';
+  skipped?: 'empty-first-write' | 'partial-first-write';
   error?: string;
 }
 
@@ -67,15 +67,17 @@ function entryCount(s: RosterSnapshot): number {
 /**
  * Reads and writes one home folder's roster.
  *
- * A class rather than free functions because the empty-guard needs to know
- * whether THIS run has written yet, and a module-level flag would be invisible
- * shared state that no test could reset. One instance per process in `index.ts`;
- * tests make their own.
+ * A class rather than free functions because the startup guard needs to know
+ * whether THIS run has written each home yet, and a module-level flag would be
+ * invisible shared state that no test could reset. One instance follows config
+ * across home switches, so the state is per absolute home, not one global bit.
  */
 export class RosterStore {
-  /** Set once this store has written successfully. The empty-guard applies only
-   *  before that: see `write`. */
-  private wrote = false;
+  /** Homes that have completed one non-shrinking write in this process. */
+  private wroteHomes = new Set<string>();
+  /** Avoid making a new backup on every debounced retry of the same refused
+   *  startup snapshot while keeping the guard armed until reconciliation. */
+  private declinedHomes = new Set<string>();
   /** Disambiguates backups made inside the same millisecond. Two writes in one
    *  tick used to produce the same filename, and the second silently replaced
    *  the first — a backup folder that quietly loses backups is worse than none. */
@@ -106,14 +108,14 @@ export class RosterStore {
   /**
    * Write the roster, keeping the previous contents as a backup.
    *
-   * THE EMPTY-GUARD. The dangerous sequence is: open the packaged build for the
+   * THE STARTUP-GUARD. The dangerous sequence is: open the packaged build for the
    * first time, its localStorage is empty (different origin), the store boots
-   * with zero agents, and the first mirror write flattens a file that holds a
-   * real roster. So the first write of a run is refused when it would replace a
-   * non-empty roster with an empty one. Later writes go through — by then an
-   * empty roster means the user actually removed their agents, and refusing it
-   * would make deletion impossible. The previous file is backed up either way,
-   * so even a wrong call here is recoverable.
+   * with zero agents (or only the god boot card), and the first mirror write
+   * flattens a file that holds a real roster. So the first write FOR EACH HOME is
+   * refused whenever it would reduce the stored entry count. The guard remains
+   * armed across retries until a complete/equal reconciliation writes once.
+   * Later writes go through — by then a smaller roster means the user really
+   * removed agents. The previous file is backed up either way.
    */
   write(snap: unknown): RosterWriteResult {
     const home = this.home();
@@ -124,16 +126,20 @@ export class RosterStore {
       mkdirSync(home, { recursive: true });
       const existing = this.read();
 
-      if (!this.wrote && existing && entryCount(existing) > 0 && entryCount(snap) === 0) {
+      const wrote = this.wroteHomes.has(home);
+      const existingCount = existing ? entryCount(existing) : 0;
+      const incomingCount = entryCount(snap);
+      if (!wrote && existing && incomingCount < existingCount) {
         // Back it up anyway: what is on disk right now is exactly what we are
-        // protecting, and a copy of it costs nothing.
-        this.backup(home, p, 'declined');
-        this.wrote = true;
-        console.warn('[roster] refused to overwrite a non-empty roster with an empty one');
-        return { ok: false, skipped: 'empty-first-write' };
+        // protecting. One backup per refused startup sequence is enough.
+        if (!this.declinedHomes.has(home)) this.backup(home, p, 'declined');
+        this.declinedHomes.add(home);
+        const skipped = incomingCount === 0 ? 'empty-first-write' : 'partial-first-write';
+        console.warn(`[roster] refused startup shrink for ${home}: ${existingCount} -> ${incomingCount}`);
+        return { ok: false, skipped };
       }
 
-      this.backup(home, p, this.wrote ? 'write' : 'run-start');
+      this.backup(home, p, wrote ? 'write' : 'run-start');
 
       const body: RosterSnapshot = {
         version: 1,
@@ -149,7 +155,8 @@ export class RosterStore {
       const tmp = `${p}.tmp`;
       writeFileSync(tmp, JSON.stringify(body, null, 2), 'utf8');
       renameSync(tmp, p);
-      this.wrote = true;
+      this.wroteHomes.add(home);
+      this.declinedHomes.delete(home);
       return { ok: true };
     } catch (e) {
       try { rmSync(`${p}.tmp`, { force: true }); } catch { /* noop */ }

@@ -348,7 +348,7 @@ export function useHive(config: HarnessConfig | null): void {
         // fresh session. Without this the most important context on the floor —
         // the orchestrator's — was lost on every restart.
         resume: true,
-        hive: { id: GOD_ID, name: 'Michael', provider: godProvider, cwd: config.harnessHome!, isGod: true, role: 'orchestrator (god)' }
+        hive: { id: GOD_ID, name: 'Michael', provider: godProvider, cwd: config.harnessHome!, isGod: true, role: 'orchestrator (god)', replyLanguage: config.locale }
       });
       if (cancelled) { godSpawning.current = false; return; }
       if (!res.ok) { godSpawning.current = false; useStore.getState().setGodStatus('failed'); return; }
@@ -590,7 +590,11 @@ export function useHive(config: HarnessConfig | null): void {
       const now = Date.now();
       const { agents, updateAgent } = useStore.getState();
       for (const a of agents) {
-        if (!a.ptyId || a.status !== 'working') continue;
+        // Gemini exposes PreCompress but no matching post-compress hook. If its
+        // resume path compacts and then returns to the prompt without another
+        // lifecycle event, the card would otherwise stay `compacting` forever
+        // and the idle-only delivery queue could never hand it new work.
+        if (!a.ptyId || (a.status !== 'working' && a.status !== 'compacting')) continue;
         // Never fight the breaker pin (a constrained/stopped agent stays 'looping')
         // or a still-booting agent (its boot sequence is mid-type).
         const bl = breakerLevel.current[a.id];
@@ -1061,10 +1065,10 @@ export function useHive(config: HarnessConfig | null): void {
         const command = (a.command ?? '').trim() || buildSpawnCommand(cfg, a.model, provider);
         const [exe, ...args] = tokenizeCommand(command);
         const hive = a.isGod
-          ? { id: a.id, name: a.name, cwd, provider, isGod: true, role: 'orchestrator (god)' }
+          ? { id: a.id, name: a.name, cwd, provider, isGod: true, role: 'orchestrator (god)', replyLanguage: a.replyLanguage ?? config.locale }
           : a.isAssistant
-          ? { id: a.id, name: a.name, cwd, provider, isAssistant: true, role: "Michael's prep assistant" }
-          : { id: a.id, name: a.name, cwd, provider, role: a.description };
+          ? { id: a.id, name: a.name, cwd, provider, isAssistant: true, role: "Michael's prep assistant", replyLanguage: a.replyLanguage ?? config.locale }
+          : { id: a.id, name: a.name, cwd, provider, role: a.description, replyLanguage: a.replyLanguage ?? config.locale };
         // Spawn at the terminal's real grid so the TUI's absolute cursor moves land
         // in the right cells (a size mismatch scatters the redraw).
         const entry = acquireTerminal(deadId);

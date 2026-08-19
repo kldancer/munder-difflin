@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useStore } from '@/store/store';
 import { PixelBadge } from './PixelBadge';
 import { Icon } from './Icon';
@@ -25,6 +26,7 @@ export function MemoryGraphPanel({
   godId: string;
   onJumpToMemory: (agentId: string) => void;
 }) {
+  const { t } = useTranslation();
   const agents = useStore((s) => s.agents);
 
   const [log, setLog] = useState<MessageLogEntry[]>([]);
@@ -186,14 +188,14 @@ export function MemoryGraphPanel({
         display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', flexShrink: 0,
         borderBottom: '1px solid var(--cth-ink-300)', background: 'var(--cth-cream-100)', flexWrap: 'wrap'
       }}>
-        <Toggle on={showTopics} onClick={() => setShowTopics((v) => !v)} label="topics" />
-        <button onClick={refresh} title="Refresh" style={iconBtn}>
-          <Icon name="gear" /> refresh
+        <Toggle on={showTopics} onClick={() => setShowTopics((v) => !v)} label={t('memory.topics')} />
+        <button onClick={refresh} title={t('memory.refresh')} style={iconBtn}>
+          <Icon name="gear" /> {t('memory.refresh')}
         </button>
         <div style={{ flex: 1 }} />
         {showTopics && (
           <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>
-            {loadingTopics ? 'reading memory…' : `showing ${graph.topicShown} of ${graph.topicTotal} topics`}
+            {loadingTopics ? t('memory.reading') : t('memory.showing', { shown: graph.topicShown, total: graph.topicTotal })}
           </span>
         )}
       </div>
@@ -344,7 +346,7 @@ export function MemoryGraphPanel({
           <div style={{
             position: 'absolute', top: 10, left: 0, right: 0, textAlign: 'center',
             fontSize: 12, color: 'var(--cth-ink-500)', pointerEvents: 'none'
-          }}>No messages logged yet — the hive is quiet. Agents shown as roster.</div>
+          }}>{t('memory.quiet')}</div>
         )}
 
         {/* tooltip */}
@@ -366,15 +368,16 @@ export function MemoryGraphPanel({
 // ─── tooltip bodies ──────────────────────────────────────────────────────────
 
 function NodeTip({ node, memories }: { node: GraphNode; memories: Record<string, string> }) {
+  const { t } = useTranslation();
   if (node.kind === 'agent') {
     const mem = memories[node.id];
-    const snippet = mem === undefined ? 'loading memory…' : memorySnippet(mem);
+    const snippet = mem === undefined ? t('memory.loading') : memorySnippet(mem);
     return (
       <>
         <div style={tipTitle}>{node.label}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0 4px' }}>
           <PixelBadge status={node.status} />
-          <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>{node.degree} message link{node.degree === 1 ? '' : 's'}</span>
+          <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>{t('memory.links', { count: node.degree })}</span>
         </div>
         <div style={tipBody}>{snippet}</div>
       </>
@@ -384,23 +387,24 @@ function NodeTip({ node, memories }: { node: GraphNode; memories: Record<string,
     return (
       <>
         <div style={tipTitle}>{node.label}</div>
-        <div style={tipBody}>shared by {node.weight} agents</div>
+        <div style={tipBody}>{t('memory.sharedBy', { count: node.weight })}</div>
       </>
     );
   }
   return (
     <>
       <div style={tipTitle}>{node.label}</div>
-      <div style={tipBody}>{node.id === 'human' ? 'escalations to the human' : 'broadcast to everyone'}</div>
+      <div style={tipBody}>{node.id === 'human' ? t('memory.escalations') : t('memory.broadcast')}</div>
     </>
   );
 }
 
 function EdgeTip({ edge, nodeById }: { edge: GraphEdge; nodeById: Map<string, GraphNode> }) {
+  const { t } = useTranslation();
   const a = nodeById.get(edge.source)?.label ?? edge.source;
   const b = nodeById.get(edge.target)?.label ?? edge.target;
   if (edge.kind === 'topic') {
-    return <div style={tipBody}>{a} knows about “{b}”</div>;
+    return <div style={tipBody}>{t('memory.knows', { a, b })}</div>;
   }
   const arrow = edge.dir === 'both' ? '↔' : edge.dir === 'bwd' ? '←' : '→';
   return (
@@ -415,13 +419,14 @@ function EdgeTip({ edge, nodeById }: { edge: GraphEdge; nodeById: Map<string, Gr
 }
 
 function Legend() {
+  const { t } = useTranslation();
   const items: { c: string; label: string }[] = [
-    { c: actColor('request'), label: 'request' },
-    { c: actColor('query'), label: 'query' },
-    { c: actColor('propose'), label: 'propose' },
-    { c: actColor('agree'), label: 'agree/done' },
-    { c: actColor('refuse'), label: 'refuse' },
-    { c: 'var(--cth-ink-300)', label: 'inform/topic' }
+    { c: actColor('request'), label: t('memory.request') },
+    { c: actColor('query'), label: t('memory.query') },
+    { c: actColor('propose'), label: t('memory.propose') },
+    { c: actColor('agree'), label: t('memory.agree') },
+    { c: actColor('refuse'), label: t('memory.refuse') },
+    { c: 'var(--cth-ink-300)', label: t('memory.informTopic') }
   ];
   return (
     <div style={{

@@ -40,6 +40,8 @@ export interface Agent {
   tmuxTarget: string;
   cwd: string;
   goal?: string;
+  /** Language the role uses for human-facing replies; protocol ids stay stable. */
+  replyLanguage?: 'zh-CN' | 'en-US';
   /** User-authored private note shown and edited from the roster-card hover. */
   note?: string;
   status: StatusKind;

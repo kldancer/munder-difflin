@@ -20,6 +20,7 @@
  *      and the drop scrolls inside it, rather than the box growing to fit.
  */
 import { useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { buildDropSrcDoc } from '../../../shared/releaseDrop';
 
 export interface ReleaseDropProps {
@@ -40,6 +41,7 @@ export function ReleaseDrop({
   version, html, canRestart, busy, showStar,
   onRestart, onOpenRelease, onStar, onDismiss
 }: ReleaseDropProps) {
+  const { t } = useTranslation();
   const srcDoc = useMemo(() => buildDropSrcDoc(html), [html]);
 
   // Esc dismisses. A modal this large with no keyboard exit feels like a trap,
@@ -121,7 +123,7 @@ export function ReleaseDrop({
           </span>
           <button
             onClick={onDismiss}
-            aria-label="Close"
+            aria-label={t('release.close')}
             style={{
               width: 28, height: 28, borderRadius: 999, flexShrink: 0,
               border: `1px solid ${LINE}`, background: 'transparent', cursor: 'pointer',
@@ -133,7 +135,7 @@ export function ReleaseDrop({
 
         {/* The drop itself — authored HTML, fully sandboxed. */}
         <iframe
-          title={`What's new in ${version}`}
+          title={t('release.whatsNew', { version })}
           srcDoc={srcDoc}
           sandbox=""
           referrerPolicy="no-referrer"
@@ -154,16 +156,16 @@ export function ReleaseDrop({
               border: 'none', background: 'transparent', cursor: 'pointer', padding: 0,
               fontFamily: 'inherit', fontSize: 13, fontWeight: 500,
               color: INK_SOFT, textDecoration: 'underline', textUnderlineOffset: 3
-            }}>⭐ Star us on GitHub</button>
+            }}>{t('release.star')}</button>
           )}
           <span style={{ flex: 1 }} />
-          <button onClick={onDismiss} style={button(false)}>Later</button>
+          <button onClick={onDismiss} style={button(false)}>{t('release.later')}</button>
           {canRestart ? (
             <button onClick={onRestart} disabled={busy} style={button(true)}>
               {busy ? 'Restarting…' : 'Restart to update'}
             </button>
           ) : (
-            <button onClick={onOpenRelease} style={button(true)}>Open releases</button>
+            <button onClick={onOpenRelease} style={button(true)}>{t('release.open')}</button>
           )}
         </div>
       </div>

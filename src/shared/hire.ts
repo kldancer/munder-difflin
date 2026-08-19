@@ -37,7 +37,7 @@ export const BUNDLED_SKILL_IDS: ReadonlySet<string> = new Set([
 /** Providers a manifest may request ('agy' is accepted as an alias for
  *  'antigravity'). 'custom' is deliberately NOT allowed — it would let a
  *  manifest choose an arbitrary local binary. */
-export type HireProvider = 'claude' | 'antigravity' | 'codex';
+export type HireProvider = 'claude' | 'antigravity' | 'codex' | 'gemini' | 'deepseek';
 
 export interface HireManifest {
   /** Spec tag; exactly `munder-difflin/hire@1` for this version. */
@@ -48,6 +48,8 @@ export interface HireManifest {
   description?: string;
   /** The standing goal/mission text pre-filled into the goal field. */
   goal?: string;
+  /** Preferred human-facing response language. */
+  replyLanguage?: 'zh-CN' | 'en-US';
   /** Office cast sprite id (e.g. 'pam'); unknown values fall back to default. */
   character?: string;
   /** Accent color name (e.g. 'mint'); unknown values fall back to default. */
@@ -90,7 +92,7 @@ export interface HireValidation {
   consentRequired?: string[];
 }
 
-const PROVIDERS: readonly string[] = ['claude', 'antigravity', 'codex'];
+const PROVIDERS: readonly string[] = ['claude', 'antigravity', 'codex', 'gemini', 'deepseek'];
 const MAX_BYTES = 64 * 1024;
 
 /** A flag ("-x", "--flag", "--flag=value") or a bare value token that may follow
@@ -188,6 +190,12 @@ export function validateHireManifest(raw: unknown): HireValidation {
   }
   const author = capped(o.author, 80, 'author', errors);
   const homepage = capped(o.homepage, 300, 'homepage', errors);
+
+  let replyLanguage: 'zh-CN' | 'en-US' | undefined;
+  if (o.replyLanguage !== undefined) {
+    if (o.replyLanguage === 'zh-CN' || o.replyLanguage === 'en-US') replyLanguage = o.replyLanguage;
+    else errors.push('"replyLanguage" must be "zh-CN" or "en-US"');
+  }
 
   let provider: HireProvider | undefined;
   if (o.provider !== undefined) {
@@ -312,7 +320,7 @@ export function validateHireManifest(raw: unknown): HireValidation {
     ok: true,
     errors: [],
     consentRequired: consentRequired.length > 0 ? consentRequired : undefined,
-    manifest: { spec: HIRE_SPEC_V1, name, description, goal, character, accent, provider, model, commandFlags, capabilities, isolate, tokenCap, author, homepage, skills, mcpServers }
+    manifest: { spec: HIRE_SPEC_V1, name, description, goal, replyLanguage, character, accent, provider, model, commandFlags, capabilities, isolate, tokenCap, author, homepage, skills, mcpServers }
   };
 }
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, type CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { HarnessConfig, AgentProvider } from '@/store/config';
 import { PixelButton } from './PixelButton';
 import { ProviderLogo } from './ProviderLogo';
@@ -22,6 +23,7 @@ const BACKENDS: Array<{ id: string; label: string; envVar: string }> = [
   { id: 'anthropic', label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY' },
   { id: 'openai', label: 'OpenAI', envVar: 'OPENAI_API_KEY' },
   { id: 'google', label: 'Google · Gemini', envVar: 'GEMINI_API_KEY' },
+  { id: 'deepseek', label: 'DeepSeek', envVar: 'DEEPSEEK_API_KEY' },
   { id: 'openrouter', label: 'OpenRouter', envVar: 'OPENROUTER_API_KEY' },
   { id: 'groq', label: 'Groq', envVar: 'GROQ_API_KEY' }
 ];
@@ -59,6 +61,14 @@ const headStyle: CSSProperties = {
 const linkStyle: CSSProperties = { color: 'var(--cth-ink-900)', textDecoration: 'underline', cursor: 'pointer' };
 
 export function AiEnginesSettings({ config }: { config: HarnessConfig }) {
+  const { t } = useTranslation();
+  const s = (key: string) => t(`settings.${key}`);
+  const r = (key: string, options?: Record<string, unknown>) => t(`residual.${key}`, {
+    ...options,
+    defaultValue: t('settings.title') === '设置' ? ({
+      byokDescription: 'OpenCode、Crush、pi.dev 和 Qwen 引擎的 API 密钥与本地端点。密钥仅', byokDescriptionTail: '（静态加密保存，之后不会显示），只在这些引擎启动时使用。Claude Code 和 Codex 使用各自的登录。', modelPlaceholder: '默认模型（provider/model）', openModelGuides: '使用开源模型？查看分步指南：', autoWarning: '⚠ 在', autoMode: '自动模式', autoWarningTail: '下，这些引擎拥有完整的文件系统和 shell 权限（无沙箱），类似 Claude 的绕过模式。关闭自动模式（常规）后，Agent 会先询问。真实模型调用的端到端验证仍需你的密钥或本地 LLM。'
+    } as Record<string, string>)[key] : undefined
+  });
   // Keep the global "OpenAI key present" signal (boolean only) live so the Talk
   // button's missing-key warning clears the instant the user saves their OpenAI key
   // here — without it the gate only refreshes on next app start. apikey:openai is
@@ -127,17 +137,15 @@ export function AiEnginesSettings({ config }: { config: HarnessConfig }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div>
-        <div style={headStyle}>AI ENGINE PROVIDERS (BYOK)</div>
+        <div style={headStyle}>{s('aiProviders')}</div>
         <div style={{ fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: '18px' }}>
-          API keys + local endpoints for the OpenCode, Crush, pi.dev and Qwen engines.
-          Keys are stored <strong>write-only</strong> (encrypted at rest; never shown again)
-          and used only when those engines spawn. Claude Code and Codex use their own login.
+          {r('byokDescription', { defaultValue: 'API keys + local endpoints for the OpenCode, Crush, pi.dev and Qwen engines. Keys are stored' })} <strong>{r('writeOnly')}</strong> {r('byokDescriptionTail', { defaultValue: '(encrypted at rest; never shown again) and used only when those engines spawn. Claude Code and Codex use their own login.' })}
         </div>
       </div>
 
       {/* Backend API keys (write-only) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={headStyle}>API KEYS</div>
+        <div style={headStyle}>{s('apiKeys')}</div>
         {BACKENDS.map((b) => (
           <div key={b.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <label style={labelStyle}>
@@ -152,9 +160,9 @@ export function AiEnginesSettings({ config }: { config: HarnessConfig }) {
                 onChange={(e) => setDraftKey((s) => ({ ...s, [b.id]: e.target.value }))}
                 style={inputStyle}
               />
-              <PixelButton variant="secondary" size="sm" onClick={() => saveKey(b.id)}>Save</PixelButton>
+                <PixelButton variant="secondary" size="sm" onClick={() => saveKey(b.id)}>{s('save')}</PixelButton>
               {hasKey[b.id] && (
-                <PixelButton variant="secondary" size="sm" onClick={() => clearKey(b.id)}>Clear</PixelButton>
+                <PixelButton variant="secondary" size="sm" onClick={() => clearKey(b.id)}>{s('clear')}</PixelButton>
               )}
             </div>
             {note[b.id] && <div style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>{note[b.id]}</div>}
@@ -164,7 +172,7 @@ export function AiEnginesSettings({ config }: { config: HarnessConfig }) {
 
       {/* Per-CLI local endpoint + default model */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={headStyle}>LOCAL ENDPOINT · DEFAULT MODEL (PER ENGINE)</div>
+        <div style={headStyle}>{s('localDefaults')}</div>
         {CLIS.map((c) => (
           <div key={c.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -178,7 +186,7 @@ export function AiEnginesSettings({ config }: { config: HarnessConfig }) {
                 style={inputStyle}
               />
               <input
-                placeholder="default model (provider/model)"
+                placeholder={r('modelPlaceholder', { defaultValue: 'default model (provider/model)' })}
                 defaultValue={models[c.id] ?? ''}
                 onBlur={(e) => saveModel(c.id, e.target.value)}
                 style={{ ...inputStyle, maxWidth: 220 }}
@@ -188,18 +196,18 @@ export function AiEnginesSettings({ config }: { config: HarnessConfig }) {
         ))}
         {/* Local-setup guides (ondev-c part-3) — link the two how-to blogs. */}
         <div style={{ fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: '17px' }}>
-          Running open models? Step-by-step guides:{' '}
+          {r('openModelGuides', { defaultValue: 'Running open models? Step-by-step guides:' })}{' '}
           <a
             href={OSS_BLOG_LINKS.openModels}
             onClick={(e) => { e.preventDefault(); void window.cth.openExternal(OSS_BLOG_LINKS.openModels); }}
             style={linkStyle}
-          >run Munder Difflin on open models</a>
+          >{r('openModels')}</a>
           {' '}·{' '}
           <a
             href={OSS_BLOG_LINKS.macMini}
             onClick={(e) => { e.preventDefault(); void window.cth.openExternal(OSS_BLOG_LINKS.macMini); }}
             style={linkStyle}
-          >set it up on a Mac Mini</a>.
+          >{r('macMini')}</a>.
         </div>
       </div>
 
@@ -208,10 +216,7 @@ export function AiEnginesSettings({ config }: { config: HarnessConfig }) {
         fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: '17px',
         padding: 8, boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', background: 'var(--cth-paper-100)'
       }}>
-        ⚠ In <strong>auto mode</strong> these engines run with full filesystem + shell access
-        (no sandbox) — like Claude's bypass mode. Turn auto mode off (General) to make them
-        ask first. Live end-to-end verification with real model calls is pending your keys / a
-        local LLM.
+        {r('autoWarning', { defaultValue: '⚠ In' })} <strong>{r('autoMode', { defaultValue: 'auto mode' })}</strong> {r('autoWarningTail', { defaultValue: 'these engines run with full filesystem + shell access (no sandbox) — like Claude’s bypass mode. Turn auto mode off (General) to make them ask first. Live end-to-end verification with real model calls is pending your keys / a local LLM.' })}
       </div>
     </div>
   );

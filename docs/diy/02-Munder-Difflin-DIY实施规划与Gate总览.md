@@ -290,12 +290,12 @@ flowchart LR
 
 | ID | 状态 | 目标与写集合 | 非目标 | 完成与 Gate |
 | --- | --- | --- | --- | --- |
-| `W1.1` | 实现完成，待 V4 | 首次向导、App 壳、HivePicker、通用按钮/Badge、退出/恢复弹层 | 不改 Onboarding 状态机、Provider/model ID 和路径 | 技术/非技术两套中文和 Key/类型检查已闭合；320/375/768px、缩放与 aria/tooltip 随 G1 统一验证 |
-| `W1.2` | 待开始 | Settings、Add Agent 及其设置子组件 | 不改配置字段、Provider 运行合同或密钥结构 | 七类 Settings 和 Add Agent 主链中文；长错误/模型名可读；保存失败保留稳定错误 code/技术 detail |
-| `W1.3` | 待开始 | Command Center、CommandBar、AgentCard、Tasks、Ask Me、Message Composer、控制条 | 不改 Hive schema、Agent status ID、PTY 输出 | 11 个标签和关键错误中文；0/1/多复数正确；暂停/恢复/纠偏/任务依赖 UI 可验 |
-| `W1.4` | 待开始 | Memory、Graph、Skills、Triggers、History、Workers、Integrations 的展示文案 | 不启用远程 Skills、公网 Trigger 或外部调用 | 中文资源覆盖；技术字段保持原样；空态、失败态、缓存态、权限提示可验 |
-| `W1.5` | 待开始 | IDE/Git/Updates/Release、Main 原生通知和文件/关闭对话框 | 不翻译 Git/CLI 输出、console 日志和 IPC 结构 | Main/Renderer 使用同一 locale；文件选择器、关闭确认、通知和更新提示走真实 Electron 入口 |
-| `G1` | 待开始 | 中文 UI 完整 Gate | 不评价 Provider 运行正确性 | Key 集合一致、缺失 Key 为零或有白名单；`V1+V2+V3+V4`；四个核心入口中英文截图无裁切 |
+| `W1.1` | 已通过 | 首次向导、App 壳、HivePicker、通用按钮/Badge、退出/恢复弹层 | 不改 Onboarding 状态机、Provider/model ID 和路径 | 技术/非技术两套中文、320/375/768px、125%/200% 等效缩放及中英文真实截图已闭合，收据见 `.work/gates/W1.1.jsonl` 与 `G1.jsonl` |
+| `W1.2` | 已通过 | Settings、Add Agent 及其设置子组件 | 不改配置字段、Provider 运行合同或密钥结构 | 七类 Settings、数据型说明和 Add Agent 主链中文已闭合；深层资源合并与全树 Key 对齐防止同名分片静默覆盖，收据见 `.work/gates/W1.2.jsonl` |
+| `W1.3` | 已通过 | Command Center、CommandBar、AgentCard、Tasks、Ask Me、Message Composer、控制条 | 不改 Hive schema、Agent status ID、PTY 输出 | 11 个标签、任务/消息/控制文案和窄屏布局已由真实 Electron 验证，收据见 `.work/gates/W1.3.jsonl` |
+| `W1.4` | 已通过 | Memory、Graph、Skills、Triggers、History、Workers、Integrations 的展示文案 | 不启用远程 Skills、公网 Trigger 或外部调用 | 展示文案、空态/失败态/权限说明已中文化；命令、路径、Provider/MCP ID 保持原样，收据见 `.work/gates/W1.4.jsonl` |
+| `W1.5` | 已通过 | IDE/Git/Updates/Release、Main 原生通知和文件/关闭对话框 | 不翻译 Git/CLI 输出、console 日志和 IPC 结构 | Main/Renderer locale 一致；更新、关闭确认及标题为“选择文件夹”的原生入口已闭合，收据见 `.work/gates/W1.5.jsonl` |
+| `G1` | 已通过 | 中文 UI 完整 Gate | 不评价 Provider 运行正确性 | 中英文全树 Key 一致且缺失为零；类型、244 项聚焦回归、构建、链接和四类入口截图通过，收据见 `.work/gates/G1.jsonl` |
 
 CJK UI Gate 至少覆盖：320/375/768px、125%/200% 缩放、Onboarding 双列、Settings 侧栏、Command Center tab、Agent/任务卡、长中文错误、中文路径与模型 ID 混排。`Press Start 2P` 只用于品牌和短标签，不承载中文正文。
 
@@ -307,9 +307,9 @@ W2 可在 `G0` 后与 W1 并行，但 `G2` 必须等待 `G1` 和 W2 运行 Gate 
 | --- | --- | --- | --- | --- |
 | `W2.1` | 已通过 | 冻结 Codex executable 来源与 Remote 可选增强。写：`codexRemote.ts`、必要 `index.ts/shellEnv.ts`、remote tests | 不自动安装 standalone，不假设 ChatGPT App binary 具备 daemon/packages | 已区分 standalone、App 内置 binary、本地 TUI；Remote 失败不阻断 PTY；6/6 定向测试与本机降级事实已闭合，收据见 `.work/gates/W2.1.jsonl` |
 | `W2.2` | 已通过 | Codex per-agent `CODEX_HOME`、Hook、Inbox/Outbox、idle-safe delivery 与 resume。写：`agentProvider.ts`、`hive.ts`、`hooks.ts`、`useHive.ts`、queue/provider/hive tests | 不改其它 Provider，不启用危险 Auto Mode | 认证 home 已隔离且禁止入 Hive Git；Hook、路由、无损重试暂停、归档、indexed session home 和 `codex resume <sid>` 已有定向测试，收据见 `.work/gates/W2.2.jsonl` |
-| `W2.3` | 待开始 | 在受控测试仓库运行 Michael→Worker→回信→done→恢复黄金场景。默认只写 `.work` 收据 | 不使用重要仓库，不泄露凭据，不把 Remote daemon 当必需 | `V5` 取得真实 PTY、Hook、Inbox/Outbox、任务终态、session/worktree 恢复证据 |
-| `W2.4` | 待开始 | 安全控制与 Worktree：pause、delivery pause、steer、graceful halt、kill、自然退出、恢复分别验收 | 不把 pause、halt、kill 合并成一个状态 | 控制状态相互独立；Worktree 不污染主仓；恢复不重复 isolate；断路器证据成立 |
-| `G2` | 待开始 | **中文 Codex 黄金场景** | 不扩展 Gemini 或其它 Provider | `G1 + W2.1~W2.4` 通过；中文界面可观察、停止、恢复真实 Codex 协作 |
+| `W2.3` | 已通过 | 在受控测试仓库运行 Michael→Worker→回信→done→恢复黄金场景。默认只写 `.work` 收据 | 不使用重要仓库，不泄露凭据，不把 Remote daemon 当必需 | 真实 Codex PTY、Hook、Michael `.sent`→Jim `inbox/.done`→Jim `.sent`→God `inbox/.done`、两张 done 卡、session 恢复和 Worktree 隔离已闭合，收据见 `.work/gates/W2.3.jsonl` |
+| `W2.4` | 已通过 | 安全控制与 Worktree：pause、delivery pause、steer、graceful halt、kill、自然退出、恢复分别验收 | 不把 pause、halt、kill 合并成一个状态 | 真实 Codex 已分别闭合工具阻断、耐久投递暂停/恢复、Hook 纠偏、无 unsupported 输出的优雅停止、退出码为 0 的自然退出、强制结束及同会话同 Worktree 恢复；受控主分支保持干净且断路器限制/健康恢复可观察，收据见 `.work/gates/W2.4.jsonl` |
+| `G2` | 已通过 | **中文 Codex 黄金场景** | 不扩展 Gemini 或其它 Provider | `G1 + W2.1~W2.4` 已通过；中文界面可观察、停止、恢复 Michael 与 Luna Worker 的真实 Codex 协作，收据见 `.work/gates/G2.jsonl` |
 
 ### 9.1 Codex 最低可靠路径
 
@@ -342,12 +342,12 @@ Remote daemon 是可选增强。ChatGPT App 内置 Codex 能运行 TUI，不代�
 
 | ID | 状态 | 目标与写集合 | 非目标 | 完成与 Gate |
 | --- | --- | --- | --- | --- |
-| `W3.1` | 待开始 | 只读冻结官方 `gemini` CLI 的 binary、版本、初始 Prompt、auto、model、resume、hooks、config home 和认证边界 | 不读 Key、不付费调用、不复用 `agy` 未验证参数 | 形成版本化合同矩阵；无法证明的项保持 unknown |
-| `W3.2` | 待开始 | 新增独立 `gemini` Provider、展示与生命周期 Bridge | 不替换 `antigravity/agy`，不污染用户全局 Gemini 配置 | Provider ID 独立；per-agent 配置；模型/权限/恢复/Inbox 路径定向测试 |
-| `W3.3` | 待开始 | 只读冻结 DeepSeek 接入合同并选路：首选 OpenCode 承载 DeepSeek API，第三方 `deepseek` TUI 为备选 | 不把 API 兼容等同于 Agent 生命周期；不在 Electron 重写 Agent Loop；不未验先引入新 CLI | 证明 binary/版本、模型发现、工具调用、权限、Hook/idle、Inbox、resume、per-agent config 和 Key owner；形成唯一路线 |
-| `W3.4` | 待开始 | 新增用户可选的 `deepseek` Provider ID、模型展示、脱敏配置和选定运行引擎 Bridge | 不在 Renderer 传递 Key；不将 DeepSeek 偷偷当作普通 `opencode`；不硬编码即将过期的模型别名 | 独立 ID 往返不丢失；缺 Key/模型/网络失败可行动；生命周期、恢复和 Inbox 有定向测试 |
-| `W3.5` | 待开始 | 分别运行 Gemini 与 DeepSeek 单 Provider 黄金场景 | 不在单 Provider 恢复/回信 Gate 失败时进入混合场景 | 两者分别取得真实 Hook/idle、回信、任务完成、恢复和安全控制收据 |
-| `G3` | 待开始 | Codex + Gemini + DeepSeek 混合办公室 | 不宣传未验 Provider；不以单次 API 返回代替协作 Gate | Michael 与三种 Provider 双向协作、失败隔离、模型显示和用量/成本事实一致 |
+| `W3.1` | 已通过 | 只读冻结官方 `gemini` CLI 的 binary、版本、初始 Prompt、auto、model、resume、hooks、config home 和认证边界 | 不读 Key、不付费调用、不复用 `agy` 未验证参数 | 已冻结本机官方 CLI 版本、交互/无头参数、模型选择、session/恢复、官方 Hook 与 per-agent home 合同；认证类型按官方 system settings 固定且不含凭据，收据见 `.work/gates/W3.1.jsonl` |
+| `W3.2` | 已通过 | 新增独立 `gemini` Provider、展示与生命周期 Bridge | 不替换 `antigravity/agy`，不污染用户全局 Gemini 配置 | 独立 Provider ID、展示、模型、隔离 home、Hook 翻译、Inbox idle gate、恢复与 Gemini 首次认证不回显凭据已闭合，收据见 `.work/gates/W3.2.jsonl` |
+| `W3.3` | 已通过 | 只读冻结 DeepSeek 接入合同并选路：首选 OpenCode 承载 DeepSeek API，第三方 `deepseek` TUI 为备选 | 不把 API 兼容等同于 Agent 生命周期；不在 Electron 重写 Agent Loop；不未验先引入新 CLI | 已选择“`deepseek` 产品 ID + OpenCode 引擎”唯一路线；本机模型发现、BYOK、工具、Plugin/idle、session、外部 Hive 目录权限和 V4 Pro/Flash 合同均有事实，收据见 `.work/gates/W3.3.jsonl` |
+| `W3.4` | 已通过 | 新增用户可选的 `deepseek` Provider ID、模型展示、脱敏配置和选定运行引擎 Bridge | 不在 Renderer 传递 Key；不将 DeepSeek 偷偷当作普通 `opencode`；不硬编码即将过期的模型别名 | 独立 ID/模型往返、Main-only Key 注入、OpenCode Plugin 生命周期、恢复、Inbox 与 `external_directory` 自动模式权限已闭合；错误不泄露凭据，收据见 `.work/gates/W3.4.jsonl` |
+| `W3.5` | 已通过 | 分别运行 Gemini 与 DeepSeek 单 Provider 黄金场景 | 不在单 Provider 恢复/回信 Gate 失败时进入混合场景 | 两者均取得真实调用、Hook/idle、文件任务、合法 Hive 回信、session 恢复/新会话恢复及 pause/halt/delivery pause 控制证据；额度/旧 session 模型覆盖失败已隔离并可行动，收据见 `.work/gates/W3.5.jsonl` |
+| `G3` | 已通过 | Codex + Gemini + DeepSeek 混合办公室 | 不宣传未验 Provider；不以单次 API 返回代替协作 Gate | Michael、Codex Worker、Gemini 与 DeepSeek 四 PTY 同时在线；双向 Inbox/Outbox 均归档、模型/Provider 显示一致、失败隔离和安全控制已闭合，收据见 `.work/gates/G3.jsonl` |
 
 `W3.1` 必须取证：实际命令名、初始 Prompt 形式、权限 flag、模型 ID、session ID/恢复、Hook 事件和 stdin/stdout 合同、Stop/continue 语义、配置发现路径、per-agent home、headless/interactive 差异、Inbox delivery owner、认证与费用边界。
 
@@ -363,10 +363,10 @@ Remote daemon 是可选增强。ChatGPT App 内置 Codex 能运行 TUI，不代�
 
 | ID | 状态 | 目标 | 完成与 Gate |
 | --- | --- | --- | --- |
-| `W4.1` | 待开始 | 中文产品经理、架构师、开发、测试、审查等角色体系与 Hire Manifest | Manifest 只预填、不自动 Spawn；来源和写集合可审查 |
-| `W4.2` | 待开始 | 可配置的 Agent 回复语言与中文任务合同 | 只影响自然语言；Hive 字段、Hook 和 CLI 合同字节不变 |
-| `W4.3` | 待开始 | 中文多角色协作场景 | 任务拆分、回信、冲突升级和人工问题均在中文 UI 可理解 |
-| `G4` | 待开始 | 中文混合模型角色办公室 | Codex/Gemini/DeepSeek 角色可配置、可协作、可停止、可恢复 |
+| `W4.1` | 已通过 | 中文产品经理、架构师、开发、测试、审查等角色体系与 Hire Manifest | 五类模板、回复语言和 Manifest 字段只预填、不会自动 Spawn；中文名称具备稳定安全的 Agent ID 回退，UI 事实见 `.work/gates/G4-role-templates-zh.png`，收据见 `.work/gates/W4.1.jsonl` |
+| `W4.2` | 已通过 | 可配置的 Agent 回复语言、中文任务合同，以及由生成源产出的中文 `PROTOCOL.md`、`COMMANDS.md`、`identity.md`/`memory.md` 初始说明 | 只翻译自然语言；机器文件名、JSON 字段、枚举、Hook/CLI 合同保持不变；已验证新 Harness、已知生成模板迁移、长期记忆正文保留与自定义文档不覆盖，收据见 `.work/gates/W4.2.jsonl` |
+| `W4.3` | 已通过 | 中文多角色协作场景 | Michael→Gemini/DeepSeek 中文任务、文件执行、合法中文回信、God 归档、额度/权限冲突升级和恢复均在中文界面可理解，收据见 `.work/gates/W4.3.jsonl` |
+| `G4` | 已通过 | 中文混合模型角色办公室 | Codex/Gemini/DeepSeek 角色均可配置、协作、暂停投递、停止和恢复；256 项 focused、5 项 i18n、3 项安全默认、双端类型检查、生产构建与真实四角色办公室全部通过，收据见 `.work/gates/G4.jsonl` |
 
 ## 12. Wave 5：个人自用安全与长期维护
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PixelButton } from '../PixelButton';
 import { useStore } from '@/store/store';
 import { TRIGGER_MODES, type TriggerMode, type WebhookTrigger } from '@shared/triggers';
@@ -29,6 +30,7 @@ import {
 const STATUS_POLL_MS = 5000;
 
 export function WebhooksSection({ onSummary }: { onSummary?: (s: string) => void }) {
+  const { t } = useTranslation();
   const hooks = useStore((s) => s.webhookTriggers);
   const setHooks = useStore((s) => s.setWebhookTriggers);
   const [status, setStatus] = useState<WebhooksStatus>({ running: false, endpoints: [] });
@@ -52,7 +54,7 @@ export function WebhooksSection({ onSummary }: { onSummary?: (s: string) => void
   }, [setHooks]);
 
   useEffect(() => {
-    onSummary?.(hooks.length === 0 ? 'none' : `${hooks.length} · ${status.running ? 'live' : 'offline'}`);
+    onSummary?.(hooks.length === 0 ? t('triggers.off') : `${hooks.length} · ${status.running ? t('triggers.on') : t('triggers.serverOffline')}`);
   }, [hooks, status.running, onSummary]);
 
   /** Update the shared mirror; optionally write it through. Main sanitises what
@@ -86,12 +88,11 @@ export function WebhooksSection({ onSummary }: { onSummary?: (s: string) => void
   return (
     <>
       <Muted>
-        Anyone holding a URL and its secret can post work in. Each endpoint carries its own secret,
-        so revoking one caller leaves the others alone.
+        {t('triggers.webhooksBlurb')}
       </Muted>
       <div style={{ height: 8 }} />
 
-      {hooks.length === 0 && <Muted>No endpoints yet.</Muted>}
+      {hooks.length === 0 && <Muted>{t('triggers.noHistory')}</Muted>}
       {hooks.map((w) => (
         <WebhookRow
           key={w.id}
@@ -105,9 +106,9 @@ export function WebhooksSection({ onSummary }: { onSummary?: (s: string) => void
 
       <div style={{ marginTop: 8 }}>
         <PixelButton variant="secondary" size="sm" onClick={() => { void add(); }} disabled={minting}>
-          {minting ? 'minting…' : 'add webhook'}
+          {minting ? t('triggers.minting') : t('triggers.addWebhook')}
         </PixelButton>
-        <Hint>A new endpoint starts switched off. Copy its URL and secret, then turn it on.</Hint>
+        <Hint>{t('triggers.off')} {t('triggers.copy')} URL / {t('triggers.secret')}，{t('memory.turnOn')}</Hint>
       </div>
     </>
   );
@@ -122,6 +123,7 @@ function WebhookRow({ hook, url, serverRunning, onPatch, onDelete }: {
   onPatch: (fields: Partial<WebhookTrigger>, persist?: boolean) => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState<'url' | 'secret' | null>(null);
@@ -180,25 +182,25 @@ function WebhookRow({ hook, url, serverRunning, onPatch, onDelete }: {
       <SubHeader
         open={open}
         onToggle={() => setOpen((o) => !o)}
-        title={hook.name || 'unnamed'}
-        sub={<>{modeLabel} · {url ? 'reachable' : serverRunning ? 'no URL yet' : 'server offline'}</>}
+        title={hook.name || t('triggers.unnamed')}
+        sub={<>{modeLabel} · {url ? t('triggers.reachable') : serverRunning ? t('triggers.noUrl') : t('triggers.serverOffline')}</>}
         right={<Toggle on={hook.enabled} onClick={() => onPatch({ enabled: !hook.enabled })} />}
       />
 
       {open && (
         <div style={{ marginTop: 4 }}>
-          <Field label="NAME">
+          <Field label={t('triggers.name')}>
             {/* Mirror while typing, write through on blur. */}
             <input
               value={hook.name}
               onChange={(e) => onPatch({ name: e.target.value }, false)}
               onBlur={() => onPatch({ name: hook.name })}
-              placeholder="Who calls this"
+              placeholder={t('triggers.whoCalls')}
               style={inputStyle}
             />
           </Field>
 
-          <Field label="POST TO">
+          <Field label={t('triggers.postTo')}>
             {url ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{
@@ -220,7 +222,7 @@ function WebhookRow({ hook, url, serverRunning, onPatch, onDelete }: {
             )}
           </Field>
 
-          <Field label="SECRET">
+          <Field label={t('triggers.secret')}>
             <SecretField
               value={hook.secret}
               revealed={revealed}
@@ -228,17 +230,17 @@ function WebhookRow({ hook, url, serverRunning, onPatch, onDelete }: {
               onCopy={() => copy('secret', hook.secret)}
               copied={copied === 'secret'}
             />
-            <Hint>Callers echo this in the x-md-webhook-secret header.</Hint>
+            <Hint>{t('triggers.secretHint')}</Hint>
           </Field>
 
-          <Field label="TRUST">
+          <Field label={t('triggers.trust')}>
             <ModePicker value={hook.mode} onChange={(mode: TriggerMode) => onPatch({ mode })} />
           </Field>
 
-          <Field label="BODY SCHEMA">
+          <Field label={t('triggers.schema')}>
             {!schemaOpen && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <MiniButton onClick={() => setSchemaOpen(true)}>edit schema</MiniButton>
+                <MiniButton onClick={() => setSchemaOpen(true)}>{t('triggers.editSchema')}</MiniButton>
                 <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>
                   what an inbound body must look like
                 </span>
@@ -247,12 +249,12 @@ function WebhookRow({ hook, url, serverRunning, onPatch, onDelete }: {
             {schemaOpen && (
               <>
                 <JsonEditor value={schemaText} onChange={(v) => { setSchemaText(v); setSchemaError(null); }} />
-                {schemaError && <Callout>Not valid JSON — {schemaError}. Nothing was saved.</Callout>}
+                {schemaError && <Callout>{t('triggers.invalidJson', { error: schemaError })}</Callout>}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
                   <PixelButton variant="primary" size="sm" onClick={saveSchema}>
-                    {schemaSaved ? 'saved' : 'save schema'}
+                    {schemaSaved ? t('triggers.saved') : t('triggers.saveSchema')}
                   </PixelButton>
-                  <PixelButton variant="ghost" size="sm" onClick={() => setSchemaOpen(false)}>close</PixelButton>
+                  <PixelButton variant="ghost" size="sm" onClick={() => setSchemaOpen(false)}>{t('triggers.close')}</PixelButton>
                 </div>
               </>
             )}
@@ -260,12 +262,12 @@ function WebhookRow({ hook, url, serverRunning, onPatch, onDelete }: {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
             <span style={{ flex: 1 }} />
-            {!confirmDelete && <MiniButton tone="danger" onClick={() => setConfirmDelete(true)}>delete</MiniButton>}
+            {!confirmDelete && <MiniButton tone="danger" onClick={() => setConfirmDelete(true)}>{t('triggers.delete')}</MiniButton>}
             {confirmDelete && (
               <>
-                <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>Sure?</span>
-                <MiniButton tone="danger" onClick={onDelete}>delete it</MiniButton>
-                <MiniButton onClick={() => setConfirmDelete(false)}>keep</MiniButton>
+                <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>{t('triggers.sure')}</span>
+                <MiniButton tone="danger" onClick={onDelete}>{t('triggers.deleteIt')}</MiniButton>
+                <MiniButton onClick={() => setConfirmDelete(false)}>{t('triggers.keep')}</MiniButton>
               </>
             )}
           </div>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { HarnessConfig } from '@/store/config';
 import { MCP_CATALOG, type McpTier } from '@shared/mcpCatalog';
 
@@ -7,17 +8,6 @@ export interface McpDefaultsSettingsProps {
 }
 
 const TIER_ORDER: McpTier[] = ['safe-readonly', 'write', 'secret'];
-const TIER_LABEL: Record<McpTier, string> = {
-  'safe-readonly': 'Safe & Read-Only (on by default)',
-  'write': 'Write Access (consent required)',
-  'secret': 'Requires Secret / API Key (consent required)'
-};
-const TIER_NOTE: Record<McpTier, string> = {
-  'safe-readonly': 'These servers read data only, need no secrets, and are scoped to the agent workspace. They are enabled for every new agent.',
-  'write': 'These servers can mutate state beyond the workspace. Off by default — enable only after reviewing.',
-  'secret': 'These servers require an API key or credentials. Off by default — add your credentials and enable after consent.'
-};
-
 const labelStyle: React.CSSProperties = {
   fontFamily: 'var(--cth-font-display)',
   fontSize: 8,
@@ -27,6 +17,7 @@ const labelStyle: React.CSSProperties = {
 };
 
 export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
+  const { t } = useTranslation();
   const [note, setNote] = useState('');
 
   const enabledFor = (id: string): boolean =>
@@ -38,10 +29,10 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
       await window.cth.updateConfig({
         mcpDefaults: { ...(config.mcpDefaults ?? {}), [id]: { enabled: next } }
       });
-      setNote(`${id}: ${next ? 'enabled' : 'disabled'}`);
+      setNote(t(`mcpSettings.${next ? 'enabledNotice' : 'disabledNotice'}`, { id }));
       setTimeout(() => setNote(''), 1800);
     } catch {
-      setNote('could not save');
+      setNote(t('mcpSettings.saveFailed'));
       setTimeout(() => setNote(''), 2000);
     }
   };
@@ -51,11 +42,9 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div>
-        <div style={{ ...labelStyle, marginBottom: 6 }}>Default MCP servers</div>
+        <div style={{ ...labelStyle, marginBottom: 6 }}>{t('settings.defaultMcpServers', { defaultValue: 'Default MCP servers' })}</div>
         <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-          These servers are merged into each new agent's session settings. Safe servers are on by
-          default; write/secret servers are off until you consent. Changes take effect on the next
-          agent spawn — running agents are not affected.
+          {t('mcpSettings.intro')}
         </span>
       </div>
 
@@ -71,10 +60,10 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
                 color: isConsent ? '#6E1423' : 'var(--cth-ink-500)',
                 textTransform: 'uppercase'
               }}>
-                {TIER_LABEL[tier]}
+                {t(`mcpSettings.tiers.${tier}.label`)}
               </span>
               <span style={{ fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-400, var(--cth-ink-500))' }}>
-                {TIER_NOTE[tier]}
+                {t(`mcpSettings.tiers.${tier}.note`)}
               </span>
             </div>
 
@@ -103,7 +92,7 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
                         }}>{entry.id}</code>
                       </span>
                       <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)', wordBreak: 'break-word' }}>
-                        {entry.description}
+                        {t(`mcpSettings.entries.${entry.id}`, { defaultValue: entry.description })}
                       </span>
                     </div>
                     <button
@@ -125,7 +114,7 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
                         textTransform: 'uppercase'
                       }}
                     >
-                      {on ? 'on' : 'off'}
+                      {on ? t('settings.on') : t('settings.off')}
                     </button>
                   </div>
                 );

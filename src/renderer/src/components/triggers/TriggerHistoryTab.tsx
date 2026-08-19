@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PixelButton } from '../PixelButton';
 import type { TriggerHistoryEntry } from '@shared/triggers';
 
@@ -174,21 +175,23 @@ function Badge({ fill, line, children }: { fill: string; line: string; children:
 }
 
 function KindBadge({ kind }: { kind: TriggerHistoryEntry['kind'] }) {
+  const { t } = useTranslation();
   return kind === 'directive'
-    ? <Badge fill="var(--cth-lemon-light)" line="var(--cth-lemon)">directive</Badge>
-    : <Badge fill="var(--cth-sky-light)" line="var(--cth-sky)">communication</Badge>;
+    ? <Badge fill="var(--cth-lemon-light)" line="var(--cth-lemon)">{t('triggers.command')}</Badge>
+    : <Badge fill="var(--cth-sky-light)" line="var(--cth-sky)">{t('triggers.organization')}</Badge>;
 }
 
 function DecisionBadge({ decision }: { decision: NonNullable<TriggerHistoryEntry['decision']> }) {
+  const { t } = useTranslation();
   switch (decision) {
     case 'pending':
-      return <Badge fill="var(--cth-lemon-light)" line="var(--cth-lemon)">needs you</Badge>;
+      return <Badge fill="var(--cth-lemon-light)" line="var(--cth-lemon)">{t('triggers.pending')}</Badge>;
     case 'approved':
-      return <Badge fill="var(--cth-mint-light)" line="var(--cth-mint)">approved</Badge>;
+      return <Badge fill="var(--cth-mint-light)" line="var(--cth-mint)">{t('triggers.approved')}</Badge>;
     case 'rejected':
-      return <Badge fill="var(--cth-coral-light)" line="var(--cth-coral)">rejected</Badge>;
+      return <Badge fill="var(--cth-coral-light)" line="var(--cth-coral)">{t('triggers.rejected')}</Badge>;
     default:
-      return <Badge fill="var(--cth-cream-200)" line="var(--cth-ink-300)">auto-allowed</Badge>;
+      return <Badge fill="var(--cth-cream-200)" line="var(--cth-ink-300)">{t('triggers.autoAllowed')}</Badge>;
   }
 }
 
@@ -205,6 +208,7 @@ function MessageBlock({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useTranslation();
   const body = msg.body ?? '';
   const { text, clipped } = useMemo(() => clampBody(body), [body]);
   return (
@@ -213,10 +217,10 @@ function MessageBlock({
         <span style={tinyCaps}>{label}</span>
         <span style={{ ...tinyCaps, flexShrink: 0 }}>{relTime(Date.now() - msg.at)}</span>
       </div>
-      <div style={bodyBox}>{body.trim() ? (expanded ? body : text) : '(empty message)'}</div>
+      <div style={bodyBox}>{body.trim() ? (expanded ? body : text) : t('triggers.emptyMessage')}</div>
       {clipped && (
         <button type="button" onClick={onToggle} style={linkButton}>
-          {expanded ? 'show less' : `show all ${body.length} characters`}
+          {expanded ? t('triggers.showLess') : t('triggers.showAll', { count: body.length })}
         </button>
       )}
     </div>
@@ -238,6 +242,7 @@ function ExchangeCard({
   busy: Record<string, boolean>;
   onDecide: (id: string, decision: 'approved' | 'rejected') => void;
 }) {
+  const { t } = useTranslation();
   const head = ex.head;
   const hasInbound = ex.msgs.some((m) => m.direction === 'inbound');
   const decision = head.decision;
@@ -248,8 +253,8 @@ function ExchangeCard({
   // is normal — it is a message still in flight, never a failure.
   const tail = (() => {
     if (pending || ex.answered) return null;
-    if (decision === 'rejected') return 'You turned this down. Nothing was sent to the hive.';
-    return 'No reply yet. Michael has this one.';
+    if (decision === 'rejected') return t('triggers.rejectedTail');
+    return t('triggers.noReply');
   })();
 
   return (
@@ -259,19 +264,19 @@ function ExchangeCard({
           background: 'var(--cth-lemon-light)', boxShadow: 'inset 0 0 0 1px var(--cth-lemon)',
           padding: '4px 6px 3px', ...tinyCaps, color: 'var(--cth-ink-900)'
         }}>
-          WAITING FOR YOU
+          {t('triggers.pending')}
         </div>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, justifyContent: 'space-between' }}>
           <span style={{ ...uiText, ...ellipsis, minWidth: 0 }} title={head.sourceName}>
-            {head.sourceName || 'unnamed source'}
+            {head.sourceName || t('triggers.unnamed')}
           </span>
           <span style={{ ...tinyCaps, flexShrink: 0 }}>{relTime(Date.now() - ex.latestAt)}</span>
         </div>
         <div style={{ ...muted, ...ellipsis, fontSize: 11 }} title={head.peer}>
-          {hasInbound ? 'from' : 'to'} {head.peer || 'unknown'}
+          {hasInbound ? t('triggers.from') : t('triggers.to')} {head.peer || 'unknown'}
         </div>
         {head.title && (
           <div style={{ ...uiText, ...ellipsis, color: 'var(--cth-ink-700)' }} title={head.title}>
@@ -299,8 +304,8 @@ function ExchangeCard({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ ...uiText, fontSize: 11, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>
             {pending.kind === 'directive'
-              ? 'Approve and this goes to Michael, who will put the hive to work on it. Reject and it is dropped — nothing runs.'
-              : 'Approve and Michael reads this. Reject and it is dropped — nothing runs.'}
+              ? t('triggers.approve')
+              : t('triggers.approve')}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <PixelButton
@@ -308,18 +313,18 @@ function ExchangeCard({
               size="sm"
               disabled={!!busy[pending.id]}
               onClick={() => onDecide(pending.id, 'approved')}
-              title="Send this message through to Michael"
+              title={t('triggers.approve')}
             >
-              {busy[pending.id] ? 'one sec…' : 'approve'}
+              {busy[pending.id] ? t('triggers.oneSec') : t('triggers.approve')}
             </PixelButton>
             <PixelButton
               variant="secondary"
               size="sm"
               disabled={!!busy[pending.id]}
               onClick={() => onDecide(pending.id, 'rejected')}
-              title="Drop this message. Nothing is sent"
+              title={t('triggers.reject')}
             >
-              reject
+              {t('triggers.reject')}
             </PixelButton>
           </div>
         </div>
@@ -361,6 +366,7 @@ const SECTIONS: { key: Source; label: string; blurb: string }[] = [
 /* ──────────────────────────────── the tab ────────────────────────────────── */
 
 export function TriggerHistoryTab() {
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<TriggerHistoryEntry[]>([]);
   const [source, setSource] = useState<Source>('webhook');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -487,9 +493,7 @@ export function TriggerHistoryTab() {
             background: 'var(--cth-lemon-light)', boxShadow: 'inset 0 0 0 1px var(--cth-lemon)',
             padding: '6px 8px', ...uiText, fontSize: 11, lineHeight: '16px'
           }}>
-            {pendingCount === 1
-              ? 'One message is held, waiting on your yes or no.'
-              : `${pendingCount} messages are held, waiting on your yes or no.`}
+            {pendingCount === 1 ? t('triggers.onePending') : t('triggers.messagesPending', { count: pendingCount })}
           </div>
         )}
 
@@ -503,14 +507,14 @@ export function TriggerHistoryTab() {
         {exchanges.length === 0 ? (
           source === 'org' ? (
             <EmptyState
-              title="Nothing here yet, and nothing is broken."
+              title={t('triggers.noHistory')}
               body={'Teammate messaging is not built yet. You can set an org key and pick a mode '
                 + 'today, but no one’s clone node can reach yours until the transport ships. '
                 + 'When it does, their messages and our replies land here.'}
             />
           ) : (
             <EmptyState
-              title="No webhook messages yet."
+              title={t('triggers.noHistory')}
               body={'When something posts to one of your endpoints, it lands here with Michael’s '
                 + 'reply underneath. Nothing has called in so far. Add an endpoint under Webhooks to '
                 + 'get a URL you can hand out.'}
@@ -538,9 +542,9 @@ export function TriggerHistoryTab() {
                   is gone for good.
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <PixelButton variant="destructive" size="sm" onClick={clear}>delete them</PixelButton>
+                  <PixelButton variant="destructive" size="sm" onClick={clear}>{t('triggers.delete')}</PixelButton>
                   <PixelButton variant="ghost" size="sm" onClick={() => setConfirmClear(false)}>
-                    keep them
+                    {t('triggers.keep')}
                   </PixelButton>
                 </div>
               </>
@@ -550,9 +554,9 @@ export function TriggerHistoryTab() {
                   variant="ghost"
                   size="sm"
                   onClick={() => setConfirmClear(true)}
-                  title="Delete this section’s history"
+                  title={t('triggers.clearHistory')}
                 >
-                  clear history
+                  {t('triggers.clearHistory')}
                 </PixelButton>
               </div>
             )}

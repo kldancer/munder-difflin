@@ -18,6 +18,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useRealtimeMichael } from './session';
+import { useTranslation } from 'react-i18next';
 
 interface AudioDevice {
   deviceId: string;
@@ -32,9 +33,8 @@ const CAN_PICK_SPEAKER =
 
 /** Enumerate audio devices of one kind, with a generic fallback label when the
  *  real label is hidden (no mic permission granted yet this session). */
-async function listDevices(kind: 'audioinput' | 'audiooutput'): Promise<AudioDevice[]> {
+async function listDevices(kind: 'audioinput' | 'audiooutput', fallback: string): Promise<AudioDevice[]> {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return [];
-  const fallback = kind === 'audioinput' ? 'Microphone' : 'Speaker';
   const devices = await navigator.mediaDevices.enumerateDevices();
   return devices
     .filter((d) => d.kind === kind)
@@ -58,6 +58,7 @@ const selectStyle: React.CSSProperties = {
 };
 
 export function RealtimeDevicePicker(): React.ReactElement {
+  const { t: tr } = useTranslation();
   const { deviceId, setDeviceId, outputDeviceId, setOutputDeviceId } = useRealtimeMichael();
   const [mics, setMics] = useState<AudioDevice[]>([]);
   const [speakers, setSpeakers] = useState<AudioDevice[]>([]);
@@ -66,12 +67,12 @@ export function RealtimeDevicePicker(): React.ReactElement {
 
   const refresh = useCallback(async () => {
     const [ins, outs] = await Promise.all([
-      listDevices('audioinput'),
-      CAN_PICK_SPEAKER ? listDevices('audiooutput') : Promise.resolve<AudioDevice[]>([])
+      listDevices('audioinput', tr('realtime.microphone')),
+      CAN_PICK_SPEAKER ? listDevices('audiooutput', tr('realtime.speaker')) : Promise.resolve<AudioDevice[]>([])
     ]);
     setMics(ins);
     setSpeakers(outs);
-    setLabelled(ins.some((m) => m.label && !/^Microphone \d+$/.test(m.label)));
+    setLabelled(ins.some((m) => m.label && !/^\D+ \d+$/.test(m.label)));
   }, []);
 
   useEffect(() => {
@@ -87,13 +88,13 @@ export function RealtimeDevicePicker(): React.ReactElement {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: 280 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <span style={labelStyle}>Microphone</span>
+        <span style={labelStyle}>{tr('realtime.microphone')}</span>
         <select
           value={deviceId ?? ''}
           onChange={(e) => setDeviceId(e.target.value || null)}
           style={selectStyle}
         >
-          <option value="">System default</option>
+          <option value="">{tr('realtime.systemDefault')}</option>
           {mics.map((m) => (
             <option key={m.deviceId} value={m.deviceId}>
               {m.label}
@@ -104,13 +105,13 @@ export function RealtimeDevicePicker(): React.ReactElement {
 
       {CAN_PICK_SPEAKER && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span style={labelStyle}>Speaker</span>
+          <span style={labelStyle}>{tr('realtime.speaker')}</span>
           <select
             value={outputDeviceId ?? ''}
             onChange={(e) => setOutputDeviceId(e.target.value || null)}
             style={selectStyle}
           >
-            <option value="">System default</option>
+            <option value="">{tr('realtime.systemDefault')}</option>
             {speakers.map((s) => (
               <option key={s.deviceId} value={s.deviceId}>
                 {s.label}
@@ -122,8 +123,8 @@ export function RealtimeDevicePicker(): React.ReactElement {
 
       {!labelled && (
         <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-          Device names appear after you first start a voice session and grant mic access.
-          The microphone choice applies the next time Michael connects; the speaker switches live.
+          {tr('realtime.deviceHint')}<br />
+          {tr('realtime.deviceHintDetail')}
         </span>
       )}
     </div>

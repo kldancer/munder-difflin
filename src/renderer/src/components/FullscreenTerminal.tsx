@@ -19,6 +19,7 @@ import { useTerminalFontSize } from './terminalFontSize';
 import { useHasTerminalDraft, disposeTerminal } from './terminalPool';
 import { useAppTheme, toggleAppTheme } from '@/design/theme';
 import type { HarnessConfig } from '@/store/config';
+import { useTranslation } from 'react-i18next';
 
 /** Roster rail width. A fixed 232px is right on a 14" laptop but reads as a
  *  sliver on a 27" display, where names truncate for no reason — so it tracks
@@ -145,6 +146,7 @@ export interface FullscreenTerminalProps {
 }
 
 export function FullscreenTerminal({ config }: FullscreenTerminalProps) {
+  const { t } = useTranslation();
   const agents = useStore(s => s.agents);
   const restorableAgents = useStore(s => s.restorableAgents);
   const fullscreenAgentId = useStore(s => s.fullscreenAgentId);
@@ -274,14 +276,14 @@ export function FullscreenTerminal({ config }: FullscreenTerminalProps) {
         <span style={{
           fontFamily: 'var(--cth-font-display)', fontSize: 12, lineHeight: '20px',
           color: 'var(--cth-ink-900)'
-        }}>MUNDER DIFFLIN · FULLSCREEN</span>
+        }}>MUNDER DIFFLIN · {t('labels.fullscreen')}</span>
         {/* Same top-right controls as the main title bar — fullscreen covers
             it, so theme / exit-fullscreen / IDE must live here too. */}
         <div className="cth-titlebar-nodrag" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
             onClick={toggleRoster}
-            title={rosterCollapsed ? 'Show the agent list' : 'Hide the agent list — full-width terminal'}
-            aria-label={rosterCollapsed ? 'Show the agent list' : 'Hide the agent list'}
+            title={rosterCollapsed ? t('terminal.showAgents') : t('terminal.hideAgents')}
+            aria-label={rosterCollapsed ? t('terminal.showAgents') : t('terminal.hideAgents')}
             aria-pressed={rosterCollapsed}
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -301,8 +303,8 @@ export function FullscreenTerminal({ config }: FullscreenTerminalProps) {
               const next = toggleAppTheme();
               void window.cth.updateConfig({ terminalTheme: next });
             }}
-            title={appThemeNow === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'}
-            aria-label="Toggle dark mode"
+            title={appThemeNow === 'dark' ? t('terminal.light') : t('terminal.dark')}
+            aria-label={t('terminal.toggleDark')}
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               width: 28, height: 28, padding: 0,
@@ -321,8 +323,8 @@ export function FullscreenTerminal({ config }: FullscreenTerminalProps) {
           <button
             className="cth-settings-btn"
             onClick={() => window.dispatchEvent(new CustomEvent('cth:open-settings'))}
-            title="Settings"
-            aria-label="Settings"
+            title={t('terminal.settings')}
+            aria-label={t('terminal.settings')}
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               width: 28, height: 28, padding: 0,
@@ -343,8 +345,8 @@ export function FullscreenTerminal({ config }: FullscreenTerminalProps) {
           </button>
           <button
             onClick={() => setFullscreen(null)}
-            title="Exit fullscreen (Esc)"
-            aria-label="Exit fullscreen"
+            title={t('terminal.exit')}
+            aria-label={t('terminal.exit')}
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               width: 28, height: 28, padding: 0,
@@ -380,7 +382,7 @@ export function FullscreenTerminal({ config }: FullscreenTerminalProps) {
           <div style={{ padding: 8, borderBottom: '1px solid var(--cth-ink-300)' }}>
             <button
               onClick={() => setAddAgentOpen(true)}
-              title="Add agent"
+              title={t('terminal.addAgent')}
               style={{
                 width: '100%', height: 32,
                 background: 'var(--cth-cream-100)',
@@ -623,6 +625,7 @@ function SidebarRow({
   drag: RowDrag;
   scale: ReturnType<typeof rosterScale>;
 }) {
+  const { t } = useTranslation();
   const buttonRef = useRef<HTMLButtonElement>(null);
   const noteRef = useRef<HTMLDivElement>(null);
   const [notePosition, setNotePosition] = useState<{ left: number; top: number } | null>(null);
@@ -758,8 +761,8 @@ function SidebarRow({
             <span style={{
               flexShrink: 0, maxWidth: '52%',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-            }} title={agent.model ? `Model: ${agent.model}` : 'Runs the CLI default model'}>
-              {shortModel(agent.model) ?? 'CLI default'}
+            }} title={agent.model ? `Model: ${agent.model}` : t('terminal.openModel')}>
+              {shortModel(agent.model) ?? t('terminal.cliDefault')}
             </span>
             <span style={{ flexShrink: 0, opacity: 0.5 }}>·</span>
             <span style={{
@@ -796,7 +799,7 @@ function SidebarRow({
               <span style={{
                 fontSize: scale.note, lineHeight: 1.35,
                 color: 'var(--cth-ink-300)', fontStyle: 'italic'
-              }}>no note</span>
+              }}>{t('ide.noNote')}</span>
             )}
           </div>
         </div>
@@ -829,7 +832,7 @@ function SidebarRow({
             fontSize: noteLabelSize,
             lineHeight: `${Math.round(noteLabelSize * 1.5)}px`,
             color: 'var(--cth-ink-700)'
-          }}>PRIVATE NOTE</div>
+          }}>{t('ide.privateNote')}</div>
           {/* A textarea, not an input: the note is a bullet list, so Enter has
               to make a new line rather than doing nothing. autoFocus is safe
               now that opening is an explicit click, not a pointer fly-by. */}
@@ -844,7 +847,7 @@ function SidebarRow({
                 buttonRef.current?.focus();
               }
             }}
-            placeholder="one line per bullet…"
+            placeholder={t('ide.notePlaceholder')}
             aria-label={`Note for ${agent.name}`}
             style={{
               width: '100%',
@@ -864,7 +867,7 @@ function SidebarRow({
           />
           <div style={{
             marginTop: 5, fontSize: 10, color: 'var(--cth-ink-500)'
-          }}>one line = one bullet · esc to close</div>
+          }}>{t('ide.noteHelp')}</div>
         </div>
         </>,
         document.body
@@ -874,6 +877,7 @@ function SidebarRow({
 }
 
 function Header({ agent }: { agent: Agent }) {
+  const { t } = useTranslation();
   const typing = useHasTerminalDraft(agent.ptyId);
   const archiveAgent = useStore((st) => st.archiveAgent);
   const [openState, setOpenState] = useState<'idle' | 'opening' | 'ok' | 'error'>('idle');
@@ -895,7 +899,7 @@ function Header({ agent }: { agent: Agent }) {
    *  button would read as "restart Michael" while looking like "close". */
   const onKill = async () => {
     if (!agent.ptyId) return;
-    if (!confirm(`Close ${agent.name}? The PTY process will terminate and the agent is archived (kept in history, off the floor).`)) return;
+    if (!confirm(t('terminal.closeConfirm', { name: agent.name }))) return;
     await window.cth.killPty(agent.ptyId);
     disposeTerminal(agent.ptyId);
     archiveAgent(agent.id);
@@ -929,7 +933,7 @@ function Header({ agent }: { agent: Agent }) {
             its agent would open whichever agent happens to be selected in the
             sidebar rather than the one filling the screen. */}
         <PixelButton variant="secondary" size="sm" onClick={() => useStore.getState().setIdeOpen(true, agent.id)}>
-          <span title="Open the IDE — file editor + git diff" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span title={t('ide.openIdeTitle')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <Icon name="code" /> IDE
           </span>
         </PixelButton>
@@ -945,7 +949,7 @@ function Header({ agent }: { agent: Agent }) {
             style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
           >
             <Icon name="terminal" />
-            {openState === 'opening' ? '...' : openState === 'ok' ? 'ok' : openState === 'error' ? 'err' : 'open'}
+            {openState === 'opening' ? '...' : openState === 'ok' ? t('waterfall.ok') : openState === 'error' ? t('ide.error') : t('terminal.openTerminal')}
           </span>
         </PixelButton>
         {/* The badge is a STATUS, not a button, but it sits in a row of them.
@@ -966,7 +970,7 @@ function Header({ agent }: { agent: Agent }) {
                 24px box — the button measured the same as its neighbours while
                 reading taller than them. */}
             <span
-              title={`Close ${agent.name} — ends the process and archives the agent`}
+              title={t('terminal.closeAgent', { name: agent.name })}
               style={{ display: 'inline-flex', alignItems: 'center', lineHeight: 0 }}
             >
               <Icon name="x" />

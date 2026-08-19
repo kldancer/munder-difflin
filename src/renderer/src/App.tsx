@@ -23,6 +23,7 @@ import { PixelButton } from '@/components/PixelButton';
 import { Icon } from '@/components/Icon';
 import { SidebarSplitter } from '@/components/SidebarSplitter';
 import { acquireTerminal } from '@/components/terminalPool';
+import { useTranslation } from 'react-i18next';
 import { FullscreenTerminal } from '@/components/FullscreenTerminal';
 import { TaskDetailOverlay } from '@/components/TaskDetailOverlay';
 import { FullscreenFileEditor } from '@/components/FullscreenFileEditor';
@@ -35,6 +36,7 @@ import brandLogo from '@brand/logo.png?url';
 declare const __APP_VERSION__: string;
 
 export function App() {
+  const { t } = useTranslation();
   const agent = useStore(selectedAgent);
   const agents = useStore(s => s.agents);
   const agentCount = agents.length;
@@ -70,6 +72,7 @@ export function App() {
   const [quitWarn, setQuitWarn] = useState<{ ptyCount: number } | null>(null);
   const [closing, setClosing] = useState<ClosingTimeState | null>(null);
   const [vpWidth, setVpWidth] = useState<number>(window.innerWidth);
+  const narrowLayout = vpWidth < 760;
 
   // Deep link into Settings from anywhere in the tree. Settings' open state is
   // local to App, so a nested control (e.g. "set it now" beside a disabled Talk
@@ -259,26 +262,27 @@ export function App() {
           borderBottom: '1px solid var(--cth-ink-300)',
           display: 'flex',
           alignItems: 'center',
-          paddingLeft: 96,
+          paddingLeft: narrowLayout ? 76 : 96,
           paddingRight: 12,
-          gap: 12,
+          gap: narrowLayout ? 6 : 12,
           userSelect: 'none'
         }}
       >
         <img
           src={brandLogo}
           alt="Munder Difflin"
-          style={{ height: 20, width: 'auto', display: 'block' }}
+          style={{ height: 20, width: 'auto', display: narrowLayout ? 'none' : 'block' }}
         />
         {/* v0.3.7: the version is no longer inert text — it doubles as the
             update control (check / download / restart to update). */}
         <UpdateBadge />
         <span style={{
+          display: narrowLayout ? 'none' : 'inline',
           fontFamily: 'var(--cth-font-ui)',
           fontSize: 13,
           color: 'var(--cth-ink-500)'
         }}>
-          {config.autoMode ? 'auto mode on' : 'auto mode off'}
+          {config.autoMode ? t('app.autoOn') : t('app.autoOff')}
         </span>
         {/* v0.3.4: theme + fullscreen live HERE (top right), not buried in the
             terminal header — and the theme darkens the whole app, terminals
@@ -293,8 +297,8 @@ export function App() {
             // harness agents — the user's global Claude theme is never touched.
             void window.cth.updateConfig({ terminalTheme: next });
           }}
-          title={appThemeNow === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'}
-          aria-label="Toggle dark mode"
+          title={appThemeNow === 'dark' ? t('app.light') : t('app.dark')}
+          aria-label={t('app.toggleDark')}
           style={{
             marginLeft: 'auto',
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -312,8 +316,8 @@ export function App() {
         <button
           className="cth-titlebar-nodrag cth-settings-btn"
           onClick={() => { setSettingsSection(undefined); setSettingsOpen(true); }}
-          title="Settings"
-          aria-label="Settings"
+          title={t('app.settings')}
+          aria-label={t('app.settings')}
           style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             width: 28, height: 28, padding: 0,
@@ -339,8 +343,8 @@ export function App() {
               ?? all.find((x) => x.ptyId);
             if (target) useStore.getState().setFullscreen(target.id);
           }}
-          title={fullscreenAgentId ? 'Exit fullscreen (Esc)' : 'Fullscreen terminal — selected agent'}
-          aria-label="Toggle fullscreen terminal"
+          title={fullscreenAgentId ? t('app.exitFullscreen') : t('app.fullscreenTerminal')}
+          aria-label={t('app.toggleFullscreen')}
           style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             width: 28, height: 28, padding: 0,
@@ -358,10 +362,10 @@ export function App() {
       <div style={{
         flex: 1, minHeight: 0,
         display: 'flex',
-        padding: 16,
+        padding: narrowLayout ? 8 : 16,
         gap: 0
       }}>
-        <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
+        {!narrowLayout && <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
           <OfficeFloor />
           <MemoryPanel />
           {agentCount === 0 && godStatus === 'booting' && <MichaelBooting />}
@@ -372,14 +376,14 @@ export function App() {
               pointerEvents: 'none'
             }}>
               <div style={{ pointerEvents: 'auto', width: 360 }}>
-                <PixelPanel variant="dialog" title="EMPTY FLOOR" noPadding>
+                <PixelPanel variant="dialog" title={t('app.emptyFloor')} noPadding>
                   <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <p style={{ margin: 0, fontSize: 13, lineHeight: '20px' }}>
-                      No agents on the floor yet. Spawn one to see real claude output stream in here.
+                      {t('app.emptyFloorMessage')}
                     </p>
                     <PixelButton variant="primary" size="md" onClick={() => setAddAgentOpen(true)}>
                       <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                        <Icon name="plus" /> add agent
+                        <Icon name="plus" /> {t('app.addAgent')}
                       </span>
                     </PixelButton>
                   </div>
@@ -387,16 +391,16 @@ export function App() {
               </div>
             </div>
           )}
-        </div>
+        </div>}
 
-        <SidebarSplitter
+        {!narrowLayout && <SidebarSplitter
           width={sidebarWidth}
           onChange={setSidebarWidth}
           viewportWidth={vpWidth}
-        />
+        />}
 
         <div style={{
-          width: sidebarWidth, flexShrink: 0,
+          width: narrowLayout ? '100%' : sidebarWidth, flexShrink: 0,
           minHeight: 0, display: 'flex', flexDirection: 'column'
         }}>
           {agent ? (
@@ -410,10 +414,10 @@ export function App() {
               <div style={{
                 fontFamily: 'var(--cth-font-display)', fontSize: 10, lineHeight: '14px',
                 color: 'var(--cth-ink-500)'
-              }}>WAKING THE FLOOR</div>
+              }}>{t('app.waking')}</div>
               <p style={{ margin: 0, fontSize: 13, textAlign: 'center', color: 'var(--cth-ink-700)' }}>
-                Michael is clocking in.<br />
-                The terminal will land here once he's seated.
+                {t('app.wakingMessage')}<br />
+                {t('app.wakingDetail')}
               </p>
             </PixelPanel>
           ) : (
@@ -425,14 +429,14 @@ export function App() {
               <div style={{
                 fontFamily: 'var(--cth-font-display)', fontSize: 10, lineHeight: '14px',
                 color: 'var(--cth-ink-500)'
-              }}>NO AGENT SELECTED</div>
+              }}>{t('app.noAgent')}</div>
               <p style={{ margin: 0, fontSize: 13, textAlign: 'center', color: 'var(--cth-ink-700)' }}>
-                Spawn an agent from the strip below.<br />
-                The terminal and command bar will land here.
+                {t('app.noAgentMessage')}<br />
+                {t('app.noAgentDetail')}
               </p>
               <PixelButton variant="secondary" size="md" onClick={() => setAddAgentOpen(true)}>
                 <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                  <Icon name="plus" /> add agent
+                  <Icon name="plus" /> {t('app.addAgent')}
                 </span>
               </PixelButton>
             </PixelPanel>

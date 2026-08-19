@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { delimiter } from 'node:path';
 
 // These helpers mirror the resolution logic in pty.ts. They exist separately so
 // headless child processes can launch `claude` with the same PATH the user's
@@ -66,7 +67,25 @@ export function userShellPath(): string {
   // A PATH is a single colon-joined line. Anything multi-line is rc-file noise
   // that slipped the fence — fall back rather than hand the agent a corrupt
   // PATH it would carry into every subprocess it spawns.
-  cachedPath = shellPath && !shellPath.includes('\n') ? shellPath : process.env.PATH || '';
+  // Preserve an explicit PATH used to launch the app (notably the Wave 0 Node 22
+  // runtime) before supplementing it with interactive-shell locations. Replacing
+  // it wholesale made npm-script CLIs resolve their `#!/usr/bin/env node` against
+  // a different, possibly broken Node than the one that successfully launched the
+  // app. Dedupe without reordering: explicit launch intent wins, shell-only tools
+  // remain discoverable afterwards.
+  const processPath = process.env.PATH || '';
+  if (!shellPath || shellPath.includes('\n')) {
+    cachedPath = processPath;
+  } else {
+    const seen = new Set<string>();
+    cachedPath = [...processPath.split(delimiter), ...shellPath.split(delimiter)]
+      .filter((part) => {
+        if (!part || seen.has(part)) return false;
+        seen.add(part);
+        return true;
+      })
+      .join(delimiter);
+  }
   return cachedPath;
 }
 

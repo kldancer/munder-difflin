@@ -49,6 +49,7 @@ export interface HiveAgentMeta {
   provider?: AgentProvider;
   role?: string;
   capabilities?: string[];
+  replyLanguage?: 'zh-CN' | 'en-US';
   cwd: string;
   isGod?: boolean;
   /** Michael's prep assistant — send-only; enriches prompts and forwards them. */

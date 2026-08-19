@@ -1,4 +1,5 @@
 import { useAgentSpans, useFleetTelemetry, totalTokens, cacheFraction } from '@/hooks/useTelemetry';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Per-agent tool-call timeline (#7B.2) — a horizontal waterfall of tool spans
@@ -8,6 +9,7 @@ import { useAgentSpans, useFleetTelemetry, totalTokens, cacheFraction } from '@/
  * the headline upgrade over the old bare tool-count proxy.
  */
 export function ToolWaterfall({ agentId }: { agentId: string }) {
+  const { t } = useTranslation();
   const spans = useAgentSpans(agentId);
   const { samples } = useFleetTelemetry();
   const sample = samples[agentId];
@@ -37,7 +39,7 @@ export function ToolWaterfall({ agentId }: { agentId: string }) {
             <span style={{ color: 'var(--cth-ink-500)' }}>{fmtTokens(totalTokens(sample))}t total</span>
           </>
         ) : (
-          <span style={{ color: 'var(--cth-ink-500)' }}>no live telemetry yet — spawn / respawn this agent to instrument it</span>
+          <span style={{ color: 'var(--cth-ink-500)' }}>{t('ide.noTelemetry')}</span>
         )}
       </div>
 
@@ -58,7 +60,7 @@ export function ToolWaterfall({ agentId }: { agentId: string }) {
               </span>
               <div style={{ flex: 1, height: 12, background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)' }}>
                 <div
-                  title={s.error ? `${s.tool}: ${s.error}` : `${s.tool} · ${s.durationMs}ms · ${ok ? 'ok' : 'failed'}`}
+                  title={s.error ? `${s.tool}: ${s.error}` : `${s.tool} · ${s.durationMs}ms · ${ok ? t('waterfall.ok') : t('waterfall.failed')}`}
                   style={{ width: `${pct}%`, height: '100%', background: ok ? 'var(--cth-mint)' : 'var(--cth-coral)' }}
                 />
               </div>

@@ -21,7 +21,7 @@ import {
   existsSync, mkdirSync, readFileSync, writeFileSync, renameSync,
   readdirSync, statSync, rmSync, appendFileSync, symlinkSync, copyFileSync, chmodSync
 } from 'node:fs';
-import { join, dirname, isAbsolute } from 'node:path';
+import { join, dirname, basename, isAbsolute, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes, createHash } from 'node:crypto';
@@ -131,6 +131,9 @@ export interface AgentMeta {
   provider?: AgentProvider;
   role?: string;
   capabilities?: string[];
+  /** Human-facing response language. Machine fields, commands and protocol ids
+   *  remain byte-stable regardless of this choice. */
+  replyLanguage?: 'zh-CN' | 'en-US';
   cwd: string;
   isGod?: boolean;
   /** Michael's prep assistant — enriches prompts and forwards them to Michael.
@@ -278,7 +281,8 @@ export class HiveManager {
    */
   constructor(
     private getHome: () => string | null,
-    private emit?: (channel: string, payload: unknown) => boolean | void
+    private emit?: (channel: string, payload: unknown) => boolean | void,
+    private getLocale: () => 'zh-CN' | 'en-US' = () => 'en-US'
   ) {}
 
   private routerTimer: NodeJS.Timeout | null = null;
@@ -478,8 +482,22 @@ export class HiveManager {
     if (!root) return;
     mkdirSync(join(root, 'agents'), { recursive: true });
 
+    const locale = this.getLocale() === 'zh-CN' ? 'zh-CN' : 'en-US';
+    const generatedProtocol = locale === 'zh-CN' ? PROTOCOL_MD_ZH : PROTOCOL_MD_EN;
+
     const protocol = join(root, 'PROTOCOL.md');
-    if (!existsSync(protocol)) writeFileSync(protocol, PROTOCOL_MD, 'utf8');
+    if (!existsSync(protocol)) {
+      writeFileSync(protocol, generatedProtocol, 'utf8');
+    } else {
+      // Migrate only a byte-for-byte known generated template. Any user-edited
+      // protocol is preserved, even when the app locale changes.
+      try {
+        const current = readFileSync(protocol, 'utf8');
+        if ((current === PROTOCOL_MD_EN || current === PROTOCOL_MD_ZH) && current !== generatedProtocol) {
+          writeFileSync(protocol, generatedProtocol, 'utf8');
+        }
+      } catch { /* preserve an unreadable/custom protocol */ }
+    }
 
     const registry = join(root, 'registry.json');
     if (!existsSync(registry)) {
@@ -487,7 +505,9 @@ export class HiveManager {
     }
     const board = join(root, 'board.md');
     if (!existsSync(board)) {
-      writeFileSync(board, '# Hive board\n\n_Shared plans live here. The god agent is the scribe._\n', 'utf8');
+      writeFileSync(board, locale === 'zh-CN'
+        ? '# Hive 看板\n\n_共享计划记录在这里，仅 god Agent 负责维护。_\n'
+        : '# Hive board\n\n_Shared plans live here. The god agent is the scribe._\n', 'utf8');
     }
     const tasks = join(root, 'tasks.json');
     if (!existsSync(tasks)) this.writeJson(tasks, { tasks: [] });
@@ -496,7 +516,7 @@ export class HiveManager {
 
     // The Claude Code command reference Michael consults (refreshed each bootstrap
     // so it tracks the bundled list).
-    writeFileSync(join(root, 'COMMANDS.md'), COMMANDS_MD, 'utf8');
+    writeFileSync(join(root, 'COMMANDS.md'), locale === 'zh-CN' ? renderCommandsMd('zh-CN') : COMMANDS_MD_EN, 'utf8');
 
     // Keep the churny/ephemeral live files out of the hive git repo.
     const gitignore = join(root, '.gitignore');
@@ -567,11 +587,19 @@ export class HiveManager {
        *  copied into the agent's `.claude/skills/` per spawn; undefined or missing
        *  is a no-op (tolerated until Kevin populates the resource dir). */
       skillsDir?: string;
+      /** Trust only the explicit spawn cwd (and its git common root) for Codex.
+       *  This follows the operator's Auto Mode choice: false keeps Codex's native
+       *  trust prompt; true makes an automated, already-approved spawn non-blocking. */
+      codexTrustProject?: boolean;
     } = {}
   ): Promise<SpawnInjection> {
     const root = this.root();
     if (!root) return { args: [], env: {} };
     this.ensureHive();
+    meta = {
+      ...meta,
+      replyLanguage: meta.replyLanguage ?? (this.getLocale() === 'zh-CN' ? 'zh-CN' : 'en-US')
+    };
 
     const dir = this.agentDir(meta.id);
     mkdirSync(join(dir, 'inbox', '.done'), { recursive: true });
@@ -587,8 +615,22 @@ export class HiveManager {
     if (opts.skillsDir) this.copyBundledSkills(opts.skillsDir, join(dir, '.claude', 'skills'));
 
     const memory = join(dir, 'memory.md');
+    const memoryEn = `# Memory — ${meta.name} (${meta.id})\n\n_Append durable facts, decisions, and context below._\n`;
+    const memoryZh = `# 长期记忆 — ${meta.name} (${meta.id})\n\n_请在下方追加可跨会话复用的持久事实、决策与上下文；不要复制完整对话。_\n`;
+    const memorySeed = meta.replyLanguage === 'zh-CN' ? memoryZh : memoryEn;
     if (!existsSync(memory)) {
-      writeFileSync(memory, `# Memory — ${meta.name} (${meta.id})\n\n_Append durable facts, decisions, and context below._\n`, 'utf8');
+      writeFileSync(memory, memorySeed, 'utf8');
+    } else {
+      // The seed paragraph is harness-owned, but everything after it belongs to
+      // the role. Migrate only the exact known seed prefix and preserve durable
+      // user/agent notes byte-for-byte.
+      try {
+        const current = readFileSync(memory, 'utf8');
+        const oldSeed = meta.replyLanguage === 'zh-CN' ? memoryEn : memoryZh;
+        if (current.startsWith(oldSeed)) {
+          writeFileSync(memory, memorySeed + current.slice(oldSeed.length), 'utf8');
+        }
+      } catch { /* an unreadable/custom memory is never overwritten */ }
     }
     ensureMineIgnore(dir); // keep settings.json / cursor / messages out of mempalace's index
     const cursor = join(dir, 'cursor.json');
@@ -689,8 +731,18 @@ export class HiveManager {
         try {
           if (desc.kind === 'hooks') {
             if (desc.shim === 'agy') this.installAgyHooks();
+            else if (desc.shim === 'gemini') {
+              // Official Gemini CLI supports a first-party hook surface, but its
+              // event names differ from Claude/Codex. Keep both settings and
+              // session history under this agent only; never mutate ~/.gemini.
+              env.GEMINI_CLI_HOME = this.installGeminiHooks(dir);
+            }
             else if (desc.shim === 'codex') {
-              env.CODEX_HOME = this.installCodexHooks(dir);
+              env.CODEX_HOME = this.installCodexHooks(
+                dir,
+                cwd.valid ? meta.cwd : undefined,
+                !!opts.codexTrustProject
+              );
               // Codex refuses to run hooks from a config dir without persisted
               // "hook trust" (normally an interactive gate). Our hooks.json is
               // hive-authored inside an isolated CODEX_HOME, so we bypass that gate
@@ -1064,11 +1116,25 @@ export class HiveManager {
 
   private identityText(meta: AgentMeta): string {
     const caps = (meta.capabilities ?? []).join(', ') || '—';
+    if (meta.replyLanguage === 'zh-CN') {
+      return [
+        `# 身份：${meta.name} (${meta.id})`,
+        '',
+        `- 角色：${meta.role ?? (meta.isGod ? '总控（god）' : 'Agent')}`,
+        `- 能力标签：${caps}`,
+        `- 回复语言：简体中文（机器字段、命令、代码与路径保持原样）`,
+        `- 工作目录：${meta.cwd}`,
+        meta.isGod ? '- 你是 **god / 总控 Agent**：保持全局态势、委派执行，只亲自负责拆分、签字、冲突、集成和最终复核，不承担普通实现。' : '',
+        meta.isGod ? '- 通过 `fleet.json` 和 `registry.json` 监控团队；完整命令参考见 `COMMANDS.md`。`claude agents` 不会列出独立启动的 Hive 同伴。' : '',
+        ''
+      ].filter(Boolean).join('\n');
+    }
     return [
       `# ${meta.name} (${meta.id})`,
       '',
       `- Role: ${meta.role ?? (meta.isGod ? 'orchestrator (god)' : 'agent')}`,
       `- Capabilities: ${caps}`,
+      '- Reply language: English (machine fields, commands, code, and paths stay unchanged)',
       `- Working directory: ${meta.cwd}`,
       meta.isGod ? '- You are the **god / orchestrator**. You run the floor — keep awareness of the whole team, delegate execution, and personally own only the important calls (decomposition, sign-offs, conflicts, integration), not the grunt work.' : '',
       meta.isGod ? '- Monitor the team with `fleet.json` (live per-agent status/tokens/cost/breaker) and `registry.json`; full command reference in `COMMANDS.md`. `claude agents` does NOT list your hive siblings.' : '',
@@ -1134,9 +1200,13 @@ export class HiveManager {
     const slackLine = meta.isGod
       ? 'SLACK REPLIES: When composing a Slack reply (or writing the `result` field of a Slack-origin kanban card), you MUST: (1) directly address what the user asked — never a bare "done"; (2) include the relevant specifics, outcome, and details; (3) format for Slack mrkdwn — open with a short *bold* headline, use bullet points for multiple items, wrap code/paths in `backtick` blocks, keep it concise (no walls of text). When finishing a Slack-origin task, always write a complete, user-facing, well-formatted `result` on the kanban card — the system posts it verbatim to Slack as the done reply.'
       : `SLACK REPLIES: If god dispatches you a task that came from Slack, it will include an exact \`"${hiveNode}" "<helper>" --channel … --thread … --text "…"\` reply command — when you finish, run it VERBATIM to post your result back to that thread yourself. The reply must be SUBSTANTIVE Slack mrkdwn (a short *bold* headline + the actual outcome/specifics/links), NEVER a bare "done".`;
+    const languageLine = meta.replyLanguage === 'zh-CN'
+      ? '回复语言合同：除文件名、JSON 字段、枚举、Hook、CLI 命令、代码、路径和逐字引用外，所有面向人类及 Agent 的说明、任务报告、问题与 Hive 消息都使用简体中文。不要翻译机器合同。'
+      : 'Reply-language contract: use English for human-facing explanations, reports, questions, and Hive messages; never translate machine fields, commands, code, paths, or literal quotations.';
     return [
-      `You are "${meta.name}" (${meta.id}), an autonomous agent in a collaborating hive of Claude agents.`,
+      `You are "${meta.name}" (${meta.id}), an autonomous agent in a collaborating hive of AI agents.`,
       `Your private workspace is ${dir}. The shared hive is ${root}. Full protocol: ${inRoot('PROTOCOL.md')}.`,
+      languageLine,
       '',
       'HIVE PROTOCOL — follow it every task:',
       `1. At the START of a task, read ${inDir('memory.md')} and EVERY file in ${inDir('inbox')} (messages other agents sent you). After handling an inbox message, move its file into ${inDir('inbox', '.done')}.`,
@@ -1347,6 +1417,11 @@ export class HiveManager {
           const msg = this.normalize(partial, id);
           msg.from = id; // sender is authoritative — the owning directory
           this.routeMessage(msg);
+          // Keep the sender's durable receipt byte-for-byte equivalent to the
+          // delivered message. Previously `.sent` retained the agent's partial
+          // draft, so generated `id/from/hops/timestamps` were missing even
+          // though PROTOCOL.md promises the harness fills them in.
+          this.atomicWriteJson(full, msg);
           renameSync(full, join(outbox, '.sent', f)); // archive, don't reprocess
           routed++;
         } catch {
@@ -1580,6 +1655,50 @@ export class HiveManager {
     }
   }
 
+  /** Official Gemini CLI lifecycle bridge. `GEMINI_CLI_HOME` is an official
+   * homedir override, so the generated `.gemini/settings.json`, sessions and
+   * trust state belong to one hive agent and the user's global config is untouched.
+   * The translator maps Gemini's BeforeTool/AfterTool/BeforeAgent/AfterAgent
+   * names and output schema onto the shared HookServer protocol. */
+  private installGeminiHooks(dir: string): string {
+    const root = this.root();
+    const home = join(dir, '.gemini-cli');
+    if (!root) return home;
+    const shim = join(root, 'bin', 'gemini-hook.cjs');
+    const settings = join(home, '.gemini', 'settings.json');
+    try {
+      mkdirSync(dirname(settings), { recursive: true });
+      mkdirSync(dirname(shim), { recursive: true });
+      writeFileSync(shim, GEMINI_HOOK_SHIM, 'utf8');
+      const entry = (event: string, matcher?: string) => ({
+        ...(matcher ? { matcher } : {}),
+        hooks: [{
+          name: `munder-${event.toLowerCase()}`,
+          type: 'command',
+          command: this.nodeRun(shim, event),
+          timeout: 30_000,
+          description: 'Munder Difflin 生命周期桥接'
+        }]
+      });
+      this.writeJson(settings, {
+        hooksConfig: { enabled: true, notifications: false },
+        hooks: {
+          BeforeTool: [entry('BeforeTool', '.*')],
+          AfterTool: [entry('AfterTool', '.*')],
+          BeforeAgent: [entry('BeforeAgent')],
+          AfterAgent: [entry('AfterAgent')],
+          SessionStart: [entry('SessionStart')],
+          SessionEnd: [entry('SessionEnd')],
+          PreCompress: [entry('PreCompress')],
+          Notification: [entry('Notification')]
+        }
+      });
+    } catch (e) {
+      console.error('[hive] installGeminiHooks failed:', e);
+    }
+    return home;
+  }
+
   /** Codex lifecycle-hook bridge → full hive parity for a `codex` worker (live
    *  status + Stop→inbox-drain), the codex counterpart of installAgyHooks().
    *
@@ -1597,7 +1716,7 @@ export class HiveManager {
    *  untouched. The user's ~/.codex/auth.json is linked in and their config.toml is
    *  copied + extended (login + model/provider/trust settings still apply).
    *  Returns the CODEX_HOME path for the caller to put in the worker's env. */
-  private installCodexHooks(dir: string): string {
+  private installCodexHooks(dir: string, projectCwd?: string, trustProject = false): string {
     const home = join(dir, '.codex');
     try {
       mkdirSync(home, { recursive: true });
@@ -1649,8 +1768,79 @@ export class HiveManager {
       // `codex app-server` → initialize → `hooks/list` reports the normalized
       // timeoutSec per event.
       const shim = this.shimPath();
+      const existingAgentConfigPath = join(home, 'config.toml');
+      const existingAgentConfig = existsSync(existingAgentConfigPath)
+        ? readFileSync(existingAgentConfigPath, 'utf8') : '';
       let config = existsSync(join(userHome, 'config.toml'))
         ? readFileSync(join(userHome, 'config.toml'), 'utf8') : '';
+
+      // A prior interactive trust choice belongs to this isolated agent and must
+      // survive our per-spawn config regeneration. Preserve only the narrow
+      // projects.<path>.trust_level contract — never copy old generated hooks or
+      // arbitrary per-agent runtime config back into the fresh user seed.
+      const projectTrust = new Map<string, 'trusted' | 'untrusted'>();
+      const projectTable = () => /^\[projects\.("(?:[^"\\]|\\.)*")\]\s*$([\s\S]*?)(?=^\[|(?![\s\S]))/gm;
+      const terminateTable = (text: string): string => text.endsWith('\n') ? text : `${text}\n`;
+      const collectProjectTrust = (text: string): void => {
+        // Repair configs written by the pre-W2.4 generator, which could join a
+        // table's final trust line directly to the next header when replace()
+        // consumed the separating newline. Seeding still comes from the fresh
+        // user config below; this normalization only salvages agent-local trust.
+        text = text.replace(
+          /(trust_level\s*=\s*"(?:trusted|untrusted)")(?=\[projects\.)/g,
+          '$1\n'
+        );
+        for (const match of text.matchAll(projectTable())) {
+          const level = /^trust_level\s*=\s*"(trusted|untrusted)"\s*$/m.exec(match[2])?.[1];
+          if (!level) continue;
+          try {
+            const path = JSON.parse(match[1]) as string;
+            if (path) projectTrust.set(path, level as 'trusted' | 'untrusted');
+          } catch { /* malformed table name — ignore */ }
+        }
+      };
+      collectProjectTrust(config);
+      collectProjectTrust(existingAgentConfig);
+
+      // Auto Mode is an explicit approval/sandbox bypass. Under that same choice,
+      // trust the exact cwd and, for an isolated worktree, the shared main-repo
+      // root Codex also resolves during startup. No broad parent/home trust.
+      if (trustProject && projectCwd) {
+        const cwd = resolve(projectCwd);
+        projectTrust.set(cwd, 'trusted');
+        const common = this.git(['rev-parse', '--path-format=absolute', '--git-common-dir'], cwd);
+        if (common.ok) {
+          const gitDir = resolve(cwd, common.out.trim());
+          if (basename(gitDir) === '.git') projectTrust.set(dirname(gitDir), 'trusted');
+        }
+      }
+
+      // Update trust in the user-seeded table in place. Appending a second table
+      // with the same TOML key makes the whole config invalid, so only agent-only
+      // or newly approved paths are appended below.
+      const seededProjectPaths = new Set<string>();
+      config = config.replace(projectTable(), (full, encoded: string, body: string) => {
+        let path: string;
+        try { path = JSON.parse(encoded) as string; } catch { return terminateTable(full); }
+        const level = projectTrust.get(path);
+        if (!level) return terminateTable(full);
+        seededProjectPaths.add(path);
+        const trustLine = /^trust_level\s*=\s*"(?:trusted|untrusted)"\s*$/m;
+        if (trustLine.test(body)) {
+          return terminateTable(full.replace(trustLine, `trust_level = "${level}"`));
+        }
+        return `${full.trimEnd()}\ntrust_level = "${level}"\n`;
+      });
+
+      const extraProjectTrust = [...projectTrust]
+        .filter(([path]) => !seededProjectPaths.has(path))
+        .sort(([a], [b]) => a.localeCompare(b));
+      if (extraProjectTrust.length) {
+        config += '\n# --- munder-hive Codex project trust (preserved/generated) ---\n';
+        for (const [path, level] of extraProjectTrust) {
+          config += `\n[projects.${JSON.stringify(path)}]\ntrust_level = "${level}"\n`;
+        }
+      }
       if (shim) {
         const events = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop',
           'SessionStart', 'UserPromptSubmit', 'PreCompact', 'PostCompact'];
@@ -1659,7 +1849,7 @@ export class HiveManager {
           config += `\n[[hooks.${ev}]]\n[[hooks.${ev}.hooks]]\ntype = "command"\ncommand = '${this.nodeRunUnquoted(shim)}'\ntimeout = 30\n`;
         }
       }
-      writeFileSync(join(home, 'config.toml'), config, 'utf8');
+      writeFileSync(existingAgentConfigPath, config, 'utf8');
     } catch (e) { console.error('[hive] installCodexHooks failed:', e); }
     return home;
   }
@@ -2022,31 +2212,75 @@ export class HiveManager {
  *  the SAME source as the UI "commands" tab so they never drift. Leads with the
  *  orchestrator note: slash = own session only, cli = shell/fleet; monitor
  *  siblings via fleet.json (claude agents does NOT see them). */
-function renderCommandsMd(): string {
+const COMMAND_GROUP_TITLES_ZH: Record<string, string> = {
+  'SESSION': '会话', 'CONTEXT & MEMORY': '上下文与记忆', 'MODELS & EFFORT': '模型与推理强度',
+  'PLAN & EXECUTE': '规划与执行', 'REVIEW & GIT': '审查与 Git', 'SUBAGENTS & BACKGROUND': '子 Agent 与后台任务',
+  'TOOLS & PERMISSIONS': '工具与权限', 'MCP & PLUGINS': 'MCP 与插件', 'USAGE & COST': '用量与费用',
+  'AUTOMATION (HEADLESS)': '自动化（无头模式）', 'CONFIG': '配置', 'HELP & DIAGNOSTICS': '帮助与诊断'
+};
+
+const COMMAND_DESCRIPTIONS_ZH: Record<string, string> = {
+  '/clear': '开始全新对话并恢复完整上下文窗口；旧会话仍可从 /resume 找回。',
+  '/resume': '选择或搜索并继续历史会话。', '/rewind': '把代码和对话一起回退到较早检查点。',
+  '/compact': '压缩当前对话以释放上下文，同时保留任务主线。', 'claude -c': '继续当前目录最近一次会话。',
+  'claude -r': '选择或搜索并恢复历史会话。', 'claude --fork-session': '恢复时创建新会话 ID，不复用原 ID。',
+  '/context': '查看上下文窗口占用及优化建议。', '/memory': '打开项目和用户级 CLAUDE.md 记忆文件。',
+  '/init': '扫描仓库并生成记录约定的 CLAUDE.md。', '# ': '以 # 开头，把一条持久笔记追加到记忆。',
+  'claude --add-dir ../other-repo': '授予会话对额外目录的读写权限。', '/model': '切换本会话模型；方向键可调整推理强度。',
+  '/effort': '设置推理强度：low / medium / high / xhigh / max。', '/fast': '切换快速模式；提高 Opus 输出速度而不降级模型。',
+  'claude --model claude-sonnet-4-6[1m]': '使用指定模型启动；[1m] 表示 100 万 Token 上下文窗口。',
+  'claude --fallback-model sonnet': '主模型不可用时自动切换到备用模型。', '/plan': '进入规划模式，修改前先设计方案。',
+  '/goal': '设定完成条件；Claude 会跨轮持续工作直至满足。', '/batch': '把大型改动拆成多个 Git worktree 并行单元。',
+  '/diff': '打开当前改动的交互式差异查看器。', '/run': '启动并操作项目应用，观察改动真实运行。',
+  '/verify': '构建、运行并观察，确认改动符合预期。', 'claude --worktree feat/x': '在隔离的 Git worktree 中启动会话。',
+  '/code-review': '检查差异中的正确性问题；--fix 修复，--comment 行内评论，ultra 执行云端深度审查。',
+  '/simplify': '只对已改代码做复用与简化，不执行缺陷排查。', '/review': '在当前会话中审查 Pull Request。',
+  '/security-review': '扫描待提交改动中的安全漏洞。', '/ultrareview': '对当前分支或 PR 执行多 Agent 云端审查。',
+  'claude agents': '查看本机存活和后台 Claude 会话。', 'claude agents --json': '以 JSON 输出存活会话，便于脚本处理。',
+  '/agents': '创建和管理用于委派的自定义子 Agent。', '/fork': '启动继承完整对话的后台子 Agent。',
+  '/background': '把当前会话转入后台继续运行。', '/tasks': '查看和管理所有后台任务。', '/stop': '停止当前已连接的后台会话。',
+  'claude --agent reviewer': '使用指定 Agent 配置启动会话。', '/permissions': '查看和编辑工具的允许、询问与拒绝规则。',
+  '/hooks': '查看已配置的生命周期 Hook。', 'claude --permission-mode bypassPermissions': '跳过逐工具审批；自动模式使用此设置。',
+  'claude --allowedTools "Bash(git *) Edit Read"': '预先允许指定工具，避免逐次询问。', '/mcp': '列出、管理并认证 MCP 服务器。',
+  '/plugin': '列出、安装、启用或禁用插件。', 'claude mcp list': '列出 MCP 服务器及健康状态。',
+  'claude mcp add <name> <command>': '注册新的 stdio 或 HTTP MCP 服务器。', '/usage': '查看会话费用、套餐限制及技能、子 Agent、MCP 用量。',
+  '/status': '查看账户、当前模型、版本与连接状态。', 'claude -p "..." --max-budget-usd 5': '限制一次无头运行的美元费用。',
+  'claude --max-turns 20': '限制 Agent 轮数，作为粗粒度失控保护。', 'claude -p "your prompt"': '无交互执行单次提示并退出。',
+  'claude -p "..." --output-format json': '以结构化 JSON 返回无头运行结果、用量和费用。',
+  'claude -p "..." --output-format stream-json': '流式输出 JSON 事件。', 'claude -p "..." --json-schema <schema>': '强制无头结果符合指定 JSON Schema。',
+  'claude --append-system-prompt "..."': '在默认系统提示后追加额外指令。', '/config': '打开主题、模型、输出风格等设置。',
+  '/theme': '切换自动、浅色、深色、色盲或自定义主题。', '/statusline': '配置 Claude Code 状态栏。',
+  '/help': '列出全部可用斜杠命令。', '/doctor': '诊断安装与健康问题；按 f 可自动修复。', '/debug': '启用调试日志并排查当前会话。',
+  '/release-notes': '按版本浏览 Claude Code 更新日志。', '/remote-control': '允许从 claude.ai 或手机远程控制本会话。'
+};
+
+function renderCommandsMd(locale: 'zh-CN' | 'en-US' = 'en-US'): string {
+  const zh = locale === 'zh-CN';
   const lines: string[] = [
-    '# Claude Code commands',
+    zh ? '# Claude Code 命令参考' : '# Claude Code commands',
     '',
-    'Reference of the Claude Code commands available to you. Two kinds:',
-    '- **slash** commands act ONLY on your own session — you CANNOT run them on another agent\'s terminal.',
-    '- **cli** commands run in your shell (Bash) and can target the fleet, spawn, or query.',
+    zh ? '以下是可用的 Claude Code 命令，分为两类：' : 'Reference of the Claude Code commands available to you. Two kinds:',
+    zh ? '- **slash** 命令只作用于你自己的会话，不能在另一个 Agent 的终端中代为执行。' : '- **slash** commands act ONLY on your own session — you CANNOT run them on another agent\'s terminal.',
+    zh ? '- **cli** 命令在 shell 中运行，可用于查询、启动或管理会话。' : '- **cli** commands run in your shell (Bash) and can target the fleet, spawn, or query.',
     '',
-    'To MONITOR the other agents in this hive, read `fleet.json` in the hive root (live per-agent tokens, cost, status, last tool, breaker level, inbox backlog) plus `registry.json` — `claude agents` does NOT list your hive siblings. Use `claude -p "..." --output-format json` for a one-off headless query.',
+    zh ? '监控本 Hive 中的其它 Agent 时，请读取根目录的 `fleet.json`（实时 Token、费用、状态、最近工具、断路器级别、收件箱积压）和 `registry.json`；`claude agents` 不会列出这些独立启动的 Hive Agent。一次性无头查询可使用 `claude -p "..." --output-format json`。' : 'To MONITOR the other agents in this hive, read `fleet.json` in the hive root (live per-agent tokens, cost, status, last tool, breaker level, inbox backlog) plus `registry.json` — `claude agents` does NOT list your hive siblings. Use `claude -p "..." --output-format json` for a one-off headless query.',
     ''
   ];
   for (const g of COMMAND_GROUPS) {
-    lines.push(`## ${g.title}`, '');
+    lines.push(`## ${zh ? (COMMAND_GROUP_TITLES_ZH[g.title] ?? g.title) : g.title}`, '');
     for (const it of g.items) {
-      lines.push(`- \`${it.cmd.trim()}\` _(${it.kind})_ — ${it.desc}${it.usage ? ` e.g. \`${it.usage}\`` : ''}`);
+      const desc = zh ? (COMMAND_DESCRIPTIONS_ZH[it.cmd] ?? '按命令原样使用。') : it.desc;
+      lines.push(`- \`${it.cmd.trim()}\` _(${it.kind})_ — ${desc}${it.usage ? `${zh ? ' 例如' : ' e.g.'} \`${it.usage}\`` : ''}`);
     }
     lines.push('');
   }
   return lines.join('\n');
 }
-const COMMANDS_MD = renderCommandsMd();
+const COMMANDS_MD_EN = renderCommandsMd('en-US');
 
-const PROTOCOL_MD = `# Hive protocol
+const PROTOCOL_MD_EN = `# Hive protocol
 
-You are one of several Claude agents sharing this hive. Coordination is entirely
+You are one of several independent AI agents sharing this hive. Coordination is entirely
 file-based; the harness (main process) is the only thing that runs git and the
 only thing that moves messages between agents.
 
@@ -2127,6 +2361,77 @@ Your \`memory.md\` is mined into the palace automatically, so the durable facts 
 write there become searchable by every agent. You don't run \`mine\` yourself.
 `;
 
+const PROTOCOL_MD_ZH = `# Hive 协作协议
+
+你是共享此 Hive 的多个独立 Agent 之一。协作以文件作为耐久载体；只有 Harness
+主进程运行 Hive 自身的 Git，并负责在 Agent 之间搬运消息。
+
+## 你的工作区 — \`agents/<your-id>/\`
+- \`identity.md\`  — 身份与角色说明（只读，由 Harness 生成）。
+- \`memory.md\`    — 长期记忆；任务开始时读取，获得持久事实后追加。
+- \`inbox/\`       — 发给你的消息；任务开始时读取。
+- \`inbox/.done/\` — 已处理消息移到这里。
+- \`outbox/\`      — 向其它 Agent 发消息时，把消息写在这里，由 Harness 投递。
+
+**绝不要写入另一个 Agent 的目录。** 只写自己的 \`outbox/\`，由路由器转发；
+这样每个文件都只有一个写入者。
+
+## 发送消息
+在 \`outbox/\` 中写入一个以 \`.json\` 结尾的 JSON 文件：
+
+\`\`\`json
+{
+  "to": "<agent-id> | god | broadcast",
+  "act": "request | inform | propose | query | agree | refuse | done",
+  "subject": "一行摘要",
+  "body": "详细内容",
+  "conversation": "同一对话沿用的标识（可选）",
+  "in_reply_to": "所回复消息的 id（可选）"
+}
+\`\`\`
+
+Harness 会补齐 \`id\`、\`from\`、\`hops\` 和时间戳。上述文件名、JSON 字段、
+枚举值和特殊接收方是机器合同，必须保持原样。
+
+## 协作规则
+- 只有 \`request\`、\`query\`、\`propose\` 期待回复；\`inform\` 和 \`done\` 是终止消息，
+  不要回复，否则两个 Agent 可能无限互答。
+- 遇到含糊、跨模块或需要签字的事项，给 \`god\` 发消息。总控 Agent 负责澄清和解阻，
+  因而通常不需要直接打断人类。
+- 没有独立的“人类审批队列”。工具权限由各 CLI 会话原生处理；确实需要人类决策时，
+  提交给 \`god\`。发给 \`human\` 的消息也会路由给 god——它是人类在楼层中的代理。
+- \`board.md\` 是共享叙事计划，仅 god 可编辑；其它 Agent 通过 \`propose\` 建议修改。
+- 已移入 \`.done/\` 的消息再次读到时视为无操作，不得重复执行。
+
+## 工作面：board.md 与 tasks.json
+Hive 根目录有两个共享工作面：
+- \`board.md\` — 自由格式的叙事计划，仅 god 维护；其它 Agent 通过消息提出变更。
+- \`tasks.json\` — 结构化任务账本，状态是 \`todo / doing / blocked / done\`，并保存标题、
+  负责人、优先级和依赖。你正在处理的任务必须及时反映真实状态。
+
+## 安全护栏：断路器与 Token 预算
+断路器会检测工具重复、错误风暴和费用失控，并按 \`steer\` → \`constrain\` → \`stop\`
+逐级干预。收到 \`Circuit breaker: steer\` 或 \`Circuit breaker: constrain\` 后，应立即停止重复，
+总结已经尝试的内容并严格遵循消息；\`constrain\` 表示转为只读并在继续调用工具前取得 god 同意。
+节省 Token：楼层和单 Agent 都可能配置预算，越界会触发断路器。优先传递文件路径和消息 ID，
+不要粘贴大段内容；上下文过重时压缩自己的会话。
+
+## 楼层监控（总控 Agent）
+god 负责持续态势感知。读取 Hive 根目录的 \`fleet.json\` 获取每个 Agent 的实时 Token、费用、
+状态、断路器、最近工具、最近活动和收件箱积压；结合 \`registry.json\`（角色名册）与
+\`log.jsonl\`（事件流）判断全局状态。\`claude agents\` 不会列出这些相互独立启动的 Hive 会话。
+需要深入了解某个 Agent 时，读取其 \`agents/<id>/memory.md\` 和 \`inbox/\`，或给它发送
+\`query\`。完整 Claude Code 命令参考位于根目录的 \`COMMANDS.md\`。
+
+## 语义记忆（可选，仅在安装 mempalace 后启用）
+环境中存在 \`MEMPALACE_PALACE_PATH\` 时，整个 Hive 共享可搜索的 MemPalace：
+- \`mempalace search "<query>"\` — 按语义检索团队历史；用 \`--wing <agent-id>\` 限定 Agent，
+  用 \`--results N\` 扩大结果数。
+- \`mempalace wake-up\` — 生成简短的当前重点摘要，适合任务开始时调用。
+
+Harness 会自动把 \`memory.md\` 的持久事实建立索引；不要自行运行 \`mine\`。
+`;
+
 // ─── cth-hook shim (written to <hive>/bin/cth-hook.cjs) ──────────────────────
 // A minimal pipe: read the hook payload on stdin, tag it with this agent's id,
 // forward it to the hive's UDS, and relay the response back to `claude`. All the
@@ -2177,6 +2482,78 @@ process.stdin.on('end', () => {
   c.on('end', () => done(0));
   c.on('error', () => process.exit(0));
   setTimeout(() => process.exit(0), 5000).unref();
+});
+`;
+
+// ─── official Gemini CLI hook bridge ─────────────────────────────────────────
+// Gemini's hooks are close to Claude's structurally but use different event names.
+// This adapter keeps HookServer provider-agnostic and translates control replies
+// back to Gemini's documented decision/additionalContext contract. stdout contains
+// JSON only; diagnostics are intentionally suppressed so credentials/prompts never
+// enter application logs through this bridge.
+const GEMINI_HOOK_SHIM = `#!/usr/bin/env node
+'use strict';
+const net = require('node:net');
+const sourceEvent = process.argv[2] || 'Unknown';
+const agentId = process.env.AGENT_ID || null;
+const EVENT_MAP = {
+  BeforeTool: 'PreToolUse',
+  AfterTool: 'PostToolUse',
+  BeforeAgent: 'UserPromptSubmit',
+  AfterAgent: 'Stop',
+  SessionStart: 'SessionStart',
+  SessionEnd: 'Stop',
+  PreCompress: 'PreCompact',
+  Notification: 'Notification'
+};
+let data = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (d) => { data += d; });
+process.stdin.on('end', () => {
+  const sock = process.env.HIVE_SOCK;
+  if (!agentId || !sock) { process.stdout.write('{}'); process.exit(0); }
+  let input = {};
+  try { input = JSON.parse(data || '{}'); } catch (_) {}
+  const payload = {
+    hook_event_name: EVENT_MAP[sourceEvent] || sourceEvent,
+    agent_id: agentId,
+    session_id: input.session_id,
+    transcript_path: input.transcript_path,
+    cwd: input.cwd,
+    tool_name: input.tool_name,
+    tool_input: input.tool_input,
+    stop_hook_active: input.stop_hook_active,
+    prompt: input.prompt,
+    source: input.source,
+    notification_type: input.notification_type,
+    message: input.message
+  };
+  let response = '';
+  const done = () => {
+    let server = {};
+    try { server = JSON.parse(response || '{}'); } catch (_) {}
+    let out = {};
+    const specific = server && server.hookSpecificOutput;
+    if (sourceEvent === 'BeforeTool' && specific && specific.permissionDecision === 'deny') {
+      out = { decision: 'deny', reason: specific.permissionDecisionReason || '已由操作员拒绝。' };
+    } else if (specific && typeof specific.additionalContext === 'string') {
+      out = { hookSpecificOutput: { additionalContext: specific.additionalContext } };
+    } else if (server && server.continue === false) {
+      out = { continue: false, stopReason: server.stopReason || '已由操作员停止。' };
+    } else if (server && (server.decision === 'deny' || server.decision === 'block')) {
+      out = { decision: 'deny', reason: server.reason || '已由操作员拒绝。' };
+    }
+    try { process.stdout.write(JSON.stringify(out)); } catch (_) {}
+    process.exit(0);
+  };
+  try {
+    const c = net.createConnection(sock, () => c.write(JSON.stringify(payload) + '\\n'));
+    c.setEncoding('utf8');
+    c.on('data', (d) => { response += d; });
+    c.on('end', done);
+    c.on('error', () => { process.stdout.write('{}'); process.exit(0); });
+    setTimeout(() => { process.stdout.write('{}'); process.exit(0); }, 5000).unref();
+  } catch (_) { process.stdout.write('{}'); process.exit(0); }
 });
 `;
 
@@ -2294,10 +2671,16 @@ module.exports.default = module.exports;
 const OPENCODE_PLUGIN = `import { createConnection } from 'node:net';
 const SOCK = process.env.HIVE_SOCK;
 const AGENT = process.env.AGENT_ID || null;
-function post(payload) {
+let SESSION = null;
+function sessionOf(input) {
+  return input && (input.sessionID || input.sessionId || (input.event && input.event.properties && input.event.properties.sessionID)) || SESSION;
+}
+function post(payload, input) {
   try {
     if (!SOCK) return;
     payload.agent_id = payload.agent_id || AGENT;
+    const sid = sessionOf(input);
+    if (sid) { SESSION = sid; payload.session_id = payload.session_id || sid; }
     const c = createConnection(SOCK, () => { try { c.end(JSON.stringify(payload) + '\\n'); } catch (e) {} });
     c.on('error', () => {});
   } catch (e) {}
@@ -2305,13 +2688,13 @@ function post(payload) {
 export const HiveBridge = async () => {
   return {
     event: async (input) => {
-      try { if (input && input.event && input.event.type === 'session.idle') post({ hook_event_name: 'Stop' }); } catch (e) {}
+      try { if (input && input.event && input.event.type === 'session.idle') post({ hook_event_name: 'Stop' }, input); } catch (e) {}
     },
     'tool.execute.before': async (input) => {
-      try { post({ hook_event_name: 'PreToolUse', tool_name: input && (input.tool || input.name) }); } catch (e) {}
+      try { post({ hook_event_name: 'PreToolUse', tool_name: input && (input.tool || input.name) }, input); } catch (e) {}
     },
     'tool.execute.after': async (input) => {
-      try { post({ hook_event_name: 'PostToolUse', tool_name: input && (input.tool || input.name) }); } catch (e) {}
+      try { post({ hook_event_name: 'PostToolUse', tool_name: input && (input.tool || input.name) }, input); } catch (e) {}
     }
   };
 };

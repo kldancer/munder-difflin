@@ -12,13 +12,15 @@
  * disagree about what is installed.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { summarizeReleaseNotes } from '@shared/releaseNotes';
-import { describeUpdateSettings, reduceStatus, type UpdateStatus } from '@shared/updateState';
+import { clampPercent, describeUpdateSettings, reduceStatus, type UpdateStatus } from '@shared/updateState';
 import { PixelButton } from './PixelButton';
 
 declare const __APP_VERSION__: string;
 
 export function UpdatesSection() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -33,6 +35,58 @@ export function UpdatesSection() {
   }, []);
 
   const view = describeUpdateSettings(status, __APP_VERSION__);
+  const localizedView = useMemo(() => {
+    const withCopy = (headline: string, detail: string, button: string | null) => ({
+      ...view, headline, detail, button
+    });
+    switch (status?.state) {
+      case 'checking':
+        return withCopy(t('updateSettings.current', { version: __APP_VERSION__ }), t('updateSettings.checking'), null);
+      case 'available':
+        return withCopy(
+          t('updateSettings.available', { version: status.version }),
+          t('updateSettings.availableDetail', { current: __APP_VERSION__ }),
+          t('updateSettings.download', { version: status.version })
+        );
+      case 'downloading':
+        return withCopy(
+          t('updateSettings.downloading', { version: status.version }),
+          t('updateSettings.downloadingDetail', { percent: clampPercent(status.percent) }),
+          null
+        );
+      case 'downloaded':
+        return withCopy(
+          t('updateSettings.downloaded', { version: status.version }),
+          t('updateSettings.downloadedDetail', { current: __APP_VERSION__ }),
+          t('updateSettings.restart')
+        );
+      case 'available-manual':
+        return withCopy(
+          t('updateSettings.available', { version: status.version }),
+          t('updateSettings.manualDetail', { reason: status.reason ? `（${status.reason}）` : '' }),
+          t('updateSettings.openRelease')
+        );
+      case 'error':
+        return withCopy(
+          t('updateSettings.failed'),
+          t('updateSettings.failedDetail', { message: status.message, current: __APP_VERSION__ }),
+          t('updateSettings.retry')
+        );
+      case 'not-available':
+        return withCopy(
+          t('updateSettings.latest', { version: __APP_VERSION__ }),
+          t('updateSettings.latestDetail'),
+          t('updateSettings.checkAgain')
+        );
+      case 'idle':
+      default:
+        return withCopy(
+          t('updateSettings.current', { version: __APP_VERSION__ }),
+          t('updateSettings.idleDetail'),
+          t('updateSettings.check')
+        );
+    }
+  }, [status, t, view]);
 
   // Same digest the update toast renders (src/shared/releaseNotes.ts), for the
   // same reason: the release body is already in hand, and "what would I get?"
@@ -63,7 +117,7 @@ export function UpdatesSection() {
         fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
         color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 10
       }}>
-        Updates
+        {t('settings.updates', { defaultValue: 'Updates' })}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
@@ -71,20 +125,20 @@ export function UpdatesSection() {
             fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)',
             // Only an actionable state earns emphasis; "you're up to date" is
             // information, not a call to action.
-            fontWeight: view.tone === 'ready' ? 600 : 400
+            fontWeight: localizedView.tone === 'ready' ? 600 : 400
           }}>
-            {view.headline}
+            {localizedView.headline}
           </span>
           <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-            {view.detail}
+            {localizedView.detail}
           </span>
         </div>
-        {view.button && (
+        {localizedView.button && (
           <PixelButton
-            variant={view.tone === 'ready' ? 'primary' : 'secondary'}
+            variant={localizedView.tone === 'ready' ? 'primary' : 'secondary'}
             size="sm"
             onClick={() => { void onClick(); }}
-            disabled={busy || view.busy}
+            disabled={busy || localizedView.busy}
             // The label is a phrase ("Check for updates", "Restart to update"),
             // and this row is a flex line whose left column carries two lines of
             // prose. Without these the button is the flexible item: it gets
@@ -94,7 +148,7 @@ export function UpdatesSection() {
             // the prose column already has minWidth: 0, so it yields instead.
             style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
           >
-            {view.button}
+            {localizedView.button}
           </PixelButton>
         )}
       </div>

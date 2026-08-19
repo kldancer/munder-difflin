@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CodeEditor } from './CodeEditor';
 import { MarkdownPreview } from '@/markdown/MarkdownPreview';
 import { useStore } from '@/store/store';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Full-window overlay for one file. The absolute path is in store; root + rel
@@ -14,6 +15,7 @@ import { useStore } from '@/store/store';
  * switch to edit to change it, save, and the preview picks it up on return.
  */
 export function FullscreenFileEditor() {
+  const { t } = useTranslation();
   const fullscreenFilePath = useStore(s => s.fullscreenFilePath);
   const view = useStore(s => s.fullscreenFileView);
   const setFullscreenFile = useStore(s => s.setFullscreenFile);
@@ -98,7 +100,7 @@ export function FullscreenFileEditor() {
                 <button
                   key={v}
                   onClick={() => setFullscreenFile(fullscreenFilePath, v)}
-                  title={v === 'edit' ? 'Edit the source' : 'Rendered preview (of the saved file)'}
+                  title={v === 'edit' ? t('ide.editSource') : t('ide.preview')}
                   style={{
                     ...chip,
                     background: mode === v ? 'var(--cth-sky-light)' : 'var(--cth-cream-100)',
@@ -108,8 +110,8 @@ export function FullscreenFileEditor() {
               ))}
             </span>
           )}
-          <button onClick={openInIde} title="Open this file in the full IDE" style={chip}>open in IDE</button>
-          <button onClick={() => setFullscreenFile(null)} title="Close (Esc)" style={chip}>✕</button>
+          <button onClick={openInIde} title={t('ide.openIdeTitle')} style={chip}>{t('ide.openInIde')}</button>
+          <button onClick={() => setFullscreenFile(null)} title={t('ide.close')} style={chip}>✕</button>
         </span>
       </div>
       <div style={{ flex: 1, minHeight: 0, overflow: mode === 'preview' ? 'auto' : 'hidden' }}>
@@ -132,6 +134,7 @@ export function FullscreenFileEditor() {
 /** Reads the saved file and renders it as markdown. Untrusted input is fine —
  *  MarkdownPreview has no HTML sink. */
 function SavedFilePreview({ root, rel }: { root: string; rel: string }) {
+  const { t } = useTranslation();
   const [state, setState] = useState<{ status: 'loading' | 'ready' | 'error'; content: string; error?: string }>({
     status: 'loading', content: ''
   });
@@ -148,7 +151,7 @@ function SavedFilePreview({ root, rel }: { root: string; rel: string }) {
   }, [root, rel]);
 
   if (state.status === 'loading') {
-    return <div style={{ padding: 24, fontFamily: 'var(--cth-font-ui)', fontSize: 13, color: 'var(--cth-ink-500)' }}>loading…</div>;
+    return <div style={{ padding: 24, fontFamily: 'var(--cth-font-ui)', fontSize: 13, color: 'var(--cth-ink-500)' }}>{t('ide.loading')}</div>;
   }
   if (state.status === 'error') {
     return <div style={{ padding: 24, fontFamily: 'var(--cth-font-ui)', fontSize: 13, color: 'var(--cth-coral)' }}>{state.error}</div>;

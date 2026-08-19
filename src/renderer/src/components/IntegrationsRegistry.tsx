@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 import { authTypeNeedsSecret as needsSecret } from '@shared/integrations';
 import { PixelButton } from './PixelButton';
 import {
@@ -94,6 +95,8 @@ function draftFromRecord(r: IntegrationRecordView): Draft {
 }
 
 export function IntegrationsRegistry() {
+  const { t } = useTranslation();
+  const r = (key: string, options?: Record<string, unknown>) => t(`residual.${key}`, options);
   const [templates, setTemplates] = useState<IntegrationTemplate[]>([]);
   const [records, setRecords] = useState<IntegrationRecordView[]>([]);
 
@@ -205,10 +208,10 @@ export function IntegrationsRegistry() {
   if (view === 'gallery') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <button type="button" onClick={goList} style={linkBtn}>← Integrations</button>
+        <button type="button" onClick={goList} style={linkBtn}>{r('backIntegrations')}</button>
         <div>
-          <div style={{ ...dispLabel, marginBottom: 4 }}>Pick a template</div>
-          <span style={subText}>Choose what you’re connecting. The template sets the defaults. Pick <b>Custom REST</b> for anything not listed.</span>
+          <div style={{ ...dispLabel, marginBottom: 4 }}>{r('pickTemplate')}</div>
+          <span style={subText}>{r('chooseConnecting')}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
           {templates.map((t) => {
@@ -230,8 +233,8 @@ export function IntegrationsRegistry() {
           })}
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <PixelButton variant="secondary" size="sm" onClick={goList}>cancel</PixelButton>
-          <PixelButton variant="primary" size="sm" onClick={continueFromGallery} disabled={!picked}>continue →</PixelButton>
+          <PixelButton variant="secondary" size="sm" onClick={goList}>{t('settings.cancel')}</PixelButton>
+          <PixelButton variant="primary" size="sm" onClick={continueFromGallery} disabled={!picked}>{r('continue')}</PixelButton>
         </div>
       </div>
     );
@@ -246,51 +249,51 @@ export function IntegrationsRegistry() {
     const isUsable = usable(draft);
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <button type="button" onClick={draft.isNew ? startAdd : goList} style={linkBtn}>{draft.isNew ? '← Templates' : '← Integrations'}</button>
+        <button type="button" onClick={draft.isNew ? startAdd : goList} style={linkBtn}>{draft.isNew ? r('backTemplates') : r('backIntegrations')}</button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: 'var(--cth-cream-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)' }}>
           <Glyph mono={g.mono} bg={g.bg} lg />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <span style={{ fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-ink-900)' }}>{tpl?.label ?? draft.kind}</span>
-            <span style={hint}>{needsSecret(draft.authType) ? `Needs a ${secretLabel.toLowerCase()}` : 'Public API — no secret needed'}</span>
+            <span style={hint}>{needsSecret(draft.authType) ? r('needsSecret', { secret: secretLabel.toLowerCase() }) : r('publicApi')}</span>
           </div>
         </div>
 
         {/* Label */}
         <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <span style={fieldLabel}>Label</span>
+          <span style={fieldLabel}>{r('label')}</span>
           <input value={draft.label} onChange={(e) => patch({ label: e.target.value, ...(draft.isNew ? { id: slugify(e.target.value) } : {}) })} placeholder={`e.g. ${tpl?.label ?? 'My API'} (prod)`} style={inputStyle} />
-          <span style={hint}>Shown in your list. Id: <code style={{ fontFamily: 'var(--cth-font-mono)' }}>{slugify(draft.id || draft.label) || '—'}</code>{draft.isNew ? '' : ' (fixed)'}</span>
+          <span style={hint}>{r('labelHelp')} <code style={{ fontFamily: 'var(--cth-font-mono)' }}>{slugify(draft.id || draft.label) || '—'}</code>{draft.isNew ? '' : r('fixed')}</span>
         </label>
 
         {/* Base URL — editable for custom-rest, fixed for presets */}
         <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <span style={fieldLabel}>Base URL</span>
+          <span style={fieldLabel}>{r('baseUrl')}</span>
           <input value={draft.baseUrl} onChange={(e) => patch({ baseUrl: e.target.value })} placeholder="https://api.example.com" readOnly={draft.kind !== 'custom-rest'} style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)', opacity: draft.kind !== 'custom-rest' ? 0.7 : 1 }} />
-          {draft.kind !== 'custom-rest' && <span style={hint}>Set by the {tpl?.label ?? 'preset'} template.</span>}
+          {draft.kind !== 'custom-rest' && <span style={hint}>{r('setByTemplate')}</span>}
         </label>
 
         {/* Auth type — selectable only for custom-rest */}
         {draft.kind === 'custom-rest' ? (
           <label style={{ display: 'flex', flexDirection: 'column', gap: 5, maxWidth: 260 }}>
-            <span style={fieldLabel}>Authentication</span>
+            <span style={fieldLabel}>{r('authentication')}</span>
             <select value={draft.authType} onChange={(e) => patch({ authType: e.target.value as IntegrationAuthType })} style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)' }}>
               {CUSTOM_AUTH.map((a) => <option key={a} value={a}>{AUTH_LABEL[a]}</option>)}
             </select>
           </label>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <span style={fieldLabel}>Authentication</span>
-            <span style={hint}>{AUTH_LABEL[draft.authType]} (set by template)</span>
+            <span style={fieldLabel}>{r('authentication')}</span>
+            <span style={hint}>{AUTH_LABEL[draft.authType]} {r('setByTemplateShort')}</span>
           </div>
         )}
 
         {/* Custom header name (header auth only) */}
         {draft.authType === 'header' && (
           <label style={{ display: 'flex', flexDirection: 'column', gap: 5, maxWidth: 320 }}>
-            <span style={fieldLabel}>Header name</span>
+            <span style={fieldLabel}>{r('headerName')}</span>
             <input value={draft.authHeader} onChange={(e) => patch({ authHeader: e.target.value })} placeholder="X-Api-Key" style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)' }} />
-            <span style={hint}>The secret is sent as <code style={{ fontFamily: 'var(--cth-font-mono)' }}>{(draft.authHeader.trim() || 'X-Header')}: &lt;secret&gt;</code>.</span>
+            <span style={hint}>{r('headerHelp')} <code style={{ fontFamily: 'var(--cth-font-mono)' }}>{(draft.authHeader.trim() || 'X-Header')}: &lt;secret&gt;</code>.</span>
           </label>
         )}
 
@@ -300,17 +303,17 @@ export function IntegrationsRegistry() {
             <span style={fieldLabel}>{secretLabel}</span>
             {showSavedPill ? (
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 12, color: 'var(--cth-ink-500)', background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', padding: '6px 10px', letterSpacing: 2 }}>•••••••• saved</span>
-                <PixelButton variant="secondary" size="sm" onClick={() => { setReplacing(true); setShowSecret(false); patch({ secret: '' }); }}>Replace key</PixelButton>
+                <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 12, color: 'var(--cth-ink-500)', background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', padding: '6px 10px', letterSpacing: 2 }}>•••••••• {t('settings.saved')}</span>
+                <PixelButton variant="secondary" size="sm" onClick={() => { setReplacing(true); setShowSecret(false); patch({ secret: '' }); }}>{r('replaceKey')}</PixelButton>
               </div>
             ) : (
               <>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <input type={showSecret ? 'text' : 'password'} value={draft.secret} onChange={(e) => patch({ secret: e.target.value })} placeholder={`Paste your ${secretLabel.toLowerCase()}`} autoComplete="off" style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)' }} />
-                  <PixelButton variant="secondary" size="sm" onClick={() => setShowSecret((s) => !s)} disabled={!draft.secret}>{showSecret ? 'hide' : 'show'}</PixelButton>
+                  <PixelButton variant="secondary" size="sm" onClick={() => setShowSecret((s) => !s)} disabled={!draft.secret}>{showSecret ? t('settings.hide') : t('settings.show')}</PixelButton>
                 </div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', padding: '7px 9px', background: 'var(--cth-cream-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100, var(--cth-ink-300))', ...hint }}>
-                  🔒&nbsp;<span><b style={{ color: 'var(--cth-ink-700)' }}>Write-only.</b> Encrypted in the main process and never shown again. To change it, paste a new key — the old one can’t be read back.{!draft.isNew && draft.hasSecret ? ' Leave blank to keep the saved key.' : ''}</span>
+                  🔒&nbsp;<span><b style={{ color: 'var(--cth-ink-700)' }}>{r('writeOnly')}</b> {r('writeOnlyHelp')}{!draft.isNew && draft.hasSecret ? r('keepSaved') : ''}</span>
                 </div>
                 {tpl?.secretHelp && <span style={hint}>{tpl.secretHelp}</span>}
               </>
@@ -320,28 +323,28 @@ export function IntegrationsRegistry() {
 
         {/* Enabled gate + worker availability */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span style={fieldLabel}>Availability</span>
+          <span style={fieldLabel}>{r('availability')}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <PixelButton variant={draft.enabled ? 'primary' : 'secondary'} size="sm" onClick={() => patch({ enabled: !draft.enabled })}>{draft.enabled ? 'enabled' : 'disabled'}</PixelButton>
-            <span style={hint}>{isUsable ? 'Available to all workers.' : needsSecret(draft.authType) && !(draft.hasSecret || draft.secret.trim()) ? 'Add a secret and enable to make it available.' : draft.enabled ? 'Ready once saved.' : 'Disabled — no worker can use it.'}</span>
+            <PixelButton variant={draft.enabled ? 'primary' : 'secondary'} size="sm" onClick={() => patch({ enabled: !draft.enabled })}>{draft.enabled ? r('enabled') : r('disabled')}</PixelButton>
+            <span style={hint}>{isUsable ? r('availableAll') : needsSecret(draft.authType) && !(draft.hasSecret || draft.secret.trim()) ? r('addSecret') : draft.enabled ? r('readySaved') : r('unavailable')}</span>
           </div>
-          <span style={hint}>v1 grants every enabled integration to all workers. Per-worker scoping is coming.</span>
+          <span style={hint}>{r('availabilityHelp')}</span>
         </div>
 
         {/* Test connection (saved integrations only — broker probes by id) */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <span style={fieldLabel}>Test connection</span>
+          <span style={fieldLabel}>{r('testConnection')}</span>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <PixelButton variant="secondary" size="sm" onClick={() => { void onTestCfg(); }} disabled={draft.isNew || testing}>{testing ? 'testing…' : 'Test connection'}</PixelButton>
+            <PixelButton variant="secondary" size="sm" onClick={() => { void onTestCfg(); }} disabled={draft.isNew || testing}>{testing ? r('testing') : r('testConnection')}</PixelButton>
             {cfgTest && <span style={{ fontSize: 12, color: cfgTest.ok ? 'var(--cth-mint-700, #1f7a4d)' : 'var(--cth-danger, #6E1423)' }}>{fmtTest(cfgTest)}</span>}
           </div>
-          <span style={hint}>{draft.isNew ? 'Save the integration first, then test the live connection.' : 'Runs a live read-only probe against the base URL with the stored secret.'}</span>
+          <span style={hint}>{draft.isNew ? r('saveFirst') : r('liveProbe')}</span>
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
           {(err || note) && <span style={{ marginRight: 'auto', fontSize: 12, color: err ? 'var(--cth-danger, #6E1423)' : 'var(--cth-ink-500)' }}>{err || note}</span>}
-          <PixelButton variant="secondary" size="sm" onClick={goList} disabled={busy}>cancel</PixelButton>
-          <PixelButton variant="primary" size="sm" onClick={() => { void onSave(); }} disabled={busy}>{busy ? '…' : draft.isNew ? 'Save integration' : 'Save changes'}</PixelButton>
+          <PixelButton variant="secondary" size="sm" onClick={goList} disabled={busy}>{t('settings.cancel')}</PixelButton>
+          <PixelButton variant="primary" size="sm" onClick={() => { void onSave(); }} disabled={busy}>{busy ? '…' : draft.isNew ? r('saveIntegration') : r('saveChanges')}</PixelButton>
         </div>
       </div>
     );
@@ -353,48 +356,48 @@ export function IntegrationsRegistry() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={dispLabel}>Integrations</div>
-          <span style={{ ...subText, maxWidth: 440 }}>Connect outside tools so your agents can read and act on them. Secrets are stored encrypted in the main process and never shown again.</span>
+          <div style={dispLabel}>{t('settings.integrations')}</div>
+          <span style={{ ...subText, maxWidth: 440 }}>{r('connectOutside')}</span>
         </div>
-        {records.length > 0 && <PixelButton variant="primary" size="sm" onClick={startAdd} disabled={busy || templates.length === 0}>+ add integration</PixelButton>}
+        {records.length > 0 && <PixelButton variant="primary" size="sm" onClick={startAdd} disabled={busy || templates.length === 0}>{r('addIntegration')}</PixelButton>}
       </div>
 
       {records.length === 0 ? (
         <div style={{ padding: 24, textAlign: 'center', background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)' }}>
-          <p style={{ margin: '0 0 12px', fontSize: 12, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>No integrations yet. Connect GitHub or a custom REST API so your agents can use it.</p>
-          <PixelButton variant="primary" size="sm" onClick={startAdd} disabled={templates.length === 0}>+ add your first integration</PixelButton>
+          <p style={{ margin: '0 0 12px', fontSize: 12, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>{r('empty')}</p>
+          <PixelButton variant="primary" size="sm" onClick={startAdd} disabled={templates.length === 0}>{r('addFirst')}</PixelButton>
         </div>
       ) : (
         <>
-          <span style={hint}>{records.length} integration{records.length === 1 ? '' : 's'} · {usableCount} available to workers</span>
+          <span style={hint}>{t(records.length === 1 ? 'residual.integrationsCount_one' : 'residual.integrationsCount_other', { count: records.length })} · {usableCount} {r('availableWorkers')}</span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {records.map((r) => {
-              const g = glyphFor(r.kind, r.label);
-              const tpl = templates.find((t) => t.kind === r.kind);
-              const st = !r.enabled
-                ? { dot: '○', color: 'var(--cth-ink-500)', text: 'Disabled' }
-                : needsSecret(r.authType) && !r.hasSecret
-                  ? { dot: '▲', color: 'var(--cth-danger, #6E1423)', text: 'Needs secret' }
-                  : { dot: '●', color: 'var(--cth-mint-700, #1f7a4d)', text: 'Enabled' };
-              const rt = rowTest[r.id];
+            {records.map((record) => {
+              const g = glyphFor(record.kind, record.label);
+              const tpl = templates.find((t) => t.kind === record.kind);
+              const st = !record.enabled
+                ? { dot: '○', color: 'var(--cth-ink-500)', text: r('disabledStatus') }
+                : needsSecret(record.authType) && !record.hasSecret
+                  ? { dot: '▲', color: 'var(--cth-danger, #6E1423)', text: r('needsSecretStatus') }
+                  : { dot: '●', color: 'var(--cth-mint-700, #1f7a4d)', text: r('enabledStatus') };
+              const rt = rowTest[record.id];
               return (
-                <div key={r.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)' }}>
+                <div key={record.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <Glyph mono={g.mono} bg={g.bg} />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-                      <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--cth-ink-900)', fontWeight: 600 }}>{r.label}</span>
-                      <span style={hint}>{tpl?.label ?? r.kind} · <code style={{ fontFamily: 'var(--cth-font-mono)' }}>{r.baseUrl || '—'}</code></span>
+                      <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--cth-ink-900)', fontWeight: 600 }}>{record.label}</span>
+                      <span style={hint}>{tpl?.label ?? record.kind} · <code style={{ fontFamily: 'var(--cth-font-mono)' }}>{record.baseUrl || '—'}</code></span>
                     </div>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: st.color, whiteSpace: 'nowrap' }}><span style={{ fontSize: 10 }}>{st.dot}</span> {st.text}</span>
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      <PixelButton variant="secondary" size="sm" onClick={() => { void onTestRow(r); }} disabled={busy || testingId === r.id}>{testingId === r.id ? '…' : 'test'}</PixelButton>
-                      <PixelButton variant="ghost" size="sm" onClick={() => startEdit(r)} disabled={busy}>edit</PixelButton>
-                      <PixelButton variant="ghost" size="sm" onClick={() => { void onRemove(r); }} disabled={busy}>✕</PixelButton>
+                      <PixelButton variant="secondary" size="sm" onClick={() => { void onTestRow(record); }} disabled={busy || testingId === record.id}>{testingId === record.id ? '…' : t('settings.test')}</PixelButton>
+                      <PixelButton variant="ghost" size="sm" onClick={() => startEdit(record)} disabled={busy}>{t('settings.edit')}</PixelButton>
+                      <PixelButton variant="ghost" size="sm" onClick={() => { void onRemove(record); }} disabled={busy}>✕</PixelButton>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ ...hint, color: usable(r) ? 'var(--cth-mint-700, #1f7a4d)' : 'var(--cth-ink-500)' }}>
-                      {usable(r) ? '✓ Available to all workers' : 'Not available to workers yet'}
+                    <span style={{ ...hint, color: usable(record) ? 'var(--cth-mint-700, #1f7a4d)' : 'var(--cth-ink-500)' }}>
+                      {usable(record) ? r('availableWorkersFull') : r('notAvailable')}
                     </span>
                     {rt && <span style={{ fontSize: 12, color: rt.ok ? 'var(--cth-mint-700, #1f7a4d)' : 'var(--cth-danger, #6E1423)' }}>· {fmtTest(rt)}</span>}
                   </div>
