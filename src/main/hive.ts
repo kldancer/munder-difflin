@@ -193,7 +193,16 @@ function shortRand(): string {
 /** Non-memory files `mempalace mine` must not ingest (Claude Code hooks config,
  *  cursor, raw inbox/outbox JSON). `mempalace mine` honors .gitignore, so we drop
  *  one in each agent dir; written on birth here and refreshed by the mine loop. */
-const MINE_IGNORE_LINES = ['settings.json', 'cursor.json', 'inbox/', 'outbox/'];
+const MINE_IGNORE_LINES = [
+  'settings.json',
+  'cursor.json',
+  'inbox/',
+  'outbox/',
+  // Per-agent Codex runtime state may contain an auth.json symlink (or a
+  // best-effort copied credential on platforms that cannot create symlinks).
+  // It must never enter the hive's own git history or semantic-memory mine.
+  '.codex/'
+];
 
 /** Idempotently ensure `<agentDir>/.gitignore` excludes the non-memory files.
  *  Append-only: writes only the missing lines, leaving any existing entries. */

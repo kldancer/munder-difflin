@@ -306,7 +306,7 @@ W2 可在 `G0` 后与 W1 并行，但 `G2` 必须等待 `G1` 和 W2 运行 Gate 
 | ID | 状态 | 目标与写集合 | 非目标 | 完成与 Gate |
 | --- | --- | --- | --- | --- |
 | `W2.1` | 已通过 | 冻结 Codex executable 来源与 Remote 可选增强。写：`codexRemote.ts`、必要 `index.ts/shellEnv.ts`、remote tests | 不自动安装 standalone，不假设 ChatGPT App binary 具备 daemon/packages | 已区分 standalone、App 内置 binary、本地 TUI；Remote 失败不阻断 PTY；6/6 定向测试与本机降级事实已闭合，收据见 `.work/gates/W2.1.jsonl` |
-| `W2.2` | 待开始 | Codex per-agent `CODEX_HOME`、Hook、Inbox/Outbox、idle-safe delivery 与 resume。写：`agentProvider.ts`、`hive.ts`、`hooks.ts`、`useHive.ts`、queue/provider/hive tests | 不改其它 Provider，不启用危险 Auto Mode | Hook、路由、重试、归档、session home 和 `codex resume <sid>` 合同有定向测试 |
+| `W2.2` | 已通过 | Codex per-agent `CODEX_HOME`、Hook、Inbox/Outbox、idle-safe delivery 与 resume。写：`agentProvider.ts`、`hive.ts`、`hooks.ts`、`useHive.ts`、queue/provider/hive tests | 不改其它 Provider，不启用危险 Auto Mode | 认证 home 已隔离且禁止入 Hive Git；Hook、路由、无损重试暂停、归档、indexed session home 和 `codex resume <sid>` 已有定向测试，收据见 `.work/gates/W2.2.jsonl` |
 | `W2.3` | 待开始 | 在受控测试仓库运行 Michael→Worker→回信→done→恢复黄金场景。默认只写 `.work` 收据 | 不使用重要仓库，不泄露凭据，不把 Remote daemon 当必需 | `V5` 取得真实 PTY、Hook、Inbox/Outbox、任务终态、session/worktree 恢复证据 |
 | `W2.4` | 待开始 | 安全控制与 Worktree：pause、delivery pause、steer、graceful halt、kill、自然退出、恢复分别验收 | 不把 pause、halt、kill 合并成一个状态 | 控制状态相互独立；Worktree 不污染主仓；恢复不重复 isolate；断路器证据成立 |
 | `G2` | 待开始 | **中文 Codex 黄金场景** | 不扩展 Gemini 或其它 Provider | `G1 + W2.1~W2.4` 通过；中文界面可观察、停止、恢复真实 Codex 协作 |

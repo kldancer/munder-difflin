@@ -17,7 +17,7 @@ import {
 import { DEFAULT_CONTEXT_TRIGGER, type ContextRule } from '../../../shared/triggers';
 import type { AgentProvider } from '../../../shared/agentProvider';
 import { acquireTerminal, resetTerminal, isTerminalAutomationSafe } from '@/components/terminalPool';
-import { deliverWithAcknowledgement } from './queueDelivery';
+import { deliverWithAcknowledgement, deliveryFailureDecision } from './queueDelivery';
 import { OFFICE_CAST, DEFAULT_CHARACTER } from '@/scene/office/cast';
 
 const GOD_ID = 'god';
@@ -286,8 +286,8 @@ export function useHive(config: HarnessConfig | null): void {
   // Queue-drain delivery tracking (#36): a message now stays IN the queue until
   // its PTY write chain resolves, so `inFlightSends` (message ids mid-write)
   // stops a store-update burst from double-sending the head, and `sendFailures`
-  // bounds retries — after MAX_SEND_ATTEMPTS failed writes the message is
-  // dropped WITH a console.warn instead of being silently destroyed.
+  // bounds retries — after MAX_SEND_ATTEMPTS failed writes the durable message
+  // stays queued and automatic delivery is paused with an explicit warning.
   const inFlightSends = useRef<Set<string>>(new Set());
   const sendFailures = useRef<Record<string, number>>({});
   // In-flight spawn guard so a re-render / StrictMode double-mount can't spawn
@@ -692,8 +692,8 @@ export function useHive(config: HarnessConfig | null): void {
     if (!config?.onboardingComplete) return;
     const FLUSH_COOLDOWN_MS = 4500;
     // A message that fails this many PTY writes (dead/crashed pty that the store
-    // still thinks is idle) is dropped WITH a console.warn — bounded so the drain
-    // never spins forever on a corpse, loud so the loss is diagnosable. (#113)
+    // still thinks is idle) remains durable and auto-delivery is paused WITH a
+    // console.warn — bounded so the drain never spins, without losing work.
     const MAX_SEND_ATTEMPTS = 3;
     const inFlight = new Set<string>();
     const sendFailures: Record<string, number> = {};
@@ -758,16 +758,16 @@ export function useHive(config: HarnessConfig | null): void {
           return { sent: true, message: next };
         }
         // Failed write (dead/crashed pty the store still thinks is idle): retry
-        // on the next cooldown-spaced flush, but only MAX_SEND_ATTEMPTS times —
-        // then drop LOUDLY so the loss is diagnosable. (#113/#36)
-        const attempts = (sendFailures[next.id] ?? 0) + 1;
-        sendFailures[next.id] = attempts;
-        if (attempts >= MAX_SEND_ATTEMPTS) {
-          delete sendFailures[next.id];
-          removeQueuedMessage(srcId, next.id);
+        // on the next cooldown-spaced flush up to the ceiling. At the ceiling,
+        // KEEP the queue item and pause automatic delivery. Deleting it here used
+        // to turn a transient PTY failure into silent work loss (#113/#36).
+        const failure = deliveryFailureDecision(sendFailures[next.id] ?? 0, MAX_SEND_ATTEMPTS);
+        sendFailures[next.id] = failure.attempts;
+        if (failure.pauseDelivery) {
+          await window.cth.controlAutoDelivery(target.id, true).catch(() => null);
           console.warn(
-            `[queue-drain] dropping message ${next.id} for ${target.id} after ${attempts} failed pty writes ` +
-            `("${next.text.slice(0, 80)}${next.text.length > 80 ? '…' : ''}")`
+            `[queue-drain] paused automatic delivery for ${target.id} after ${failure.attempts} failed PTY writes; ` +
+            `message ${next.id} remains queued`
           );
         }
         return { sent: false };

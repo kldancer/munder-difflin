@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const loadTs = require('./load-ts.cjs');
 
-const { deliverWithAcknowledgement } =
+const { deliverWithAcknowledgement, deliveryFailureDecision } =
   loadTs('src/renderer/src/hooks/queueDelivery.ts');
 
 test('queue item is acknowledged only after delivery succeeds', async () => {
@@ -30,4 +30,15 @@ test('failed delivery remains unacknowledged for retry', async () => {
   );
   assert.equal(sent, false);
   assert.equal(acknowledged, false);
+});
+
+test('delivery failures retry twice, then pause without authorizing deletion', () => {
+  const first = deliveryFailureDecision(0, 3);
+  const second = deliveryFailureDecision(first.attempts, 3);
+  const third = deliveryFailureDecision(second.attempts, 3);
+
+  assert.deepEqual(first, { attempts: 1, pauseDelivery: false });
+  assert.deepEqual(second, { attempts: 2, pauseDelivery: false });
+  assert.deepEqual(third, { attempts: 3, pauseDelivery: true });
+  assert.deepEqual(deliveryFailureDecision(third.attempts, 3), third);
 });

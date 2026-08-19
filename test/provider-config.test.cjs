@@ -62,6 +62,10 @@ test('provider commands use matching models and equivalent bypass modes', () => 
   );
 });
 
+test('Codex recommends the current Sol orchestrator model', () => {
+  assert.equal(providerPreset('codex').recommendedOrchestratorModel, 'gpt-5.6-sol');
+});
+
 test('model picker options stay provider-specific', () => {
   assert.equal(
     modelsForProvider('claude').find((model) => model.id === 'claude-opus-5')?.label,

@@ -20,7 +20,7 @@ const fs = require('node:fs');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { execFileSync, spawn } = require('node:child_process');
 const loadTs = require('./load-ts.cjs');
 
 const { HiveManager } = loadTs('src/main/hive.ts');
@@ -110,6 +110,9 @@ test('every hook installer routes through the launcher — none left on bare nod
   const hive = new HiveManager(() => home);
   await hive.ensureAgent({ id: 'a1', name: 'A', provider: 'claude', cwd: home });
 
+  const agentIgnore = fs.readFileSync(path.join(home, 'hive/agents/a1/.gitignore'), 'utf8');
+  assert.match(agentIgnore, /^\.codex\/$/m, 'per-agent Codex credentials/runtime must stay out of hive git');
+
   // agy and grok install into the USER's home. Redirect it, and refuse to run
   // rather than write into the developer's real ~/.gemini / ~/.grok.
   const realHome = process.env.HOME;
@@ -122,9 +125,27 @@ test('every hook installer routes through the launcher — none left on bare nod
   });
   assert.equal(os.homedir(), home, 'home redirect failed — aborting before touching the real home');
 
+  fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.codex/auth.json'), '{"testOnly":true}\n', 'utf8');
+
   hive.installAgyHooks();
   hive.installGrokHooks();
-  hive.installCodexHooks(path.join(home, 'hive/agents/a1'));
+  const codexHome = hive.installCodexHooks(path.join(home, 'hive/agents/a1'));
+
+  const codexConfig = fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8');
+  for (const event of [
+    'PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop',
+    'SessionStart', 'UserPromptSubmit', 'PreCompact', 'PostCompact'
+  ]) {
+    assert.match(codexConfig, new RegExp(`\\[\\[hooks\\.${event}\\]\\]`));
+  }
+  assert.equal((codexConfig.match(/type = "command"/g) ?? []).length, 8);
+  assert.equal((codexConfig.match(/timeout = 30/g) ?? []).length, 8);
+  assert.equal(fs.existsSync(path.join(codexHome, 'auth.json')), true);
+  const ignored = execFileSync('git', [
+    'check-ignore', 'agents/a1/.codex/auth.json'
+  ], { cwd: path.join(home, 'hive'), encoding: 'utf8' }).trim();
+  assert.equal(ignored, 'agents/a1/.codex/auth.json');
 
   const launcher = launcherIn(home);
   const commands = hookCommandsUnder(home);
