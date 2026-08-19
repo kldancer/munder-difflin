@@ -4732,7 +4732,7 @@ app.whenReady().then(() => {
   analytics.init({
     stateDir: app.getPath('userData'),
     appVersion: app.getVersion(),
-    enabled: readConfig().telemetryEnabled !== false
+    enabled: readConfig().telemetryEnabled === true
   });
 
   // A cold-start deep link (Windows/Linux) rides in on OUR argv.

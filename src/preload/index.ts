@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { AgentProvider } from '../shared/agentProvider';
 import type { HireManifest } from '../shared/hire';
+import type { AppLocale } from '../shared/i18n';
 export type { HireManifest } from '../shared/hire';
 import type { IntegrationRecord, IntegrationTemplate } from '../shared/integrations';
 export type { IntegrationRecord, IntegrationTemplate } from '../shared/integrations';
@@ -255,6 +256,7 @@ export interface CircuitBreakerConfig {
 
 export interface HarnessConfig {
   onboardingComplete: boolean;
+  locale: AppLocale;
   /** Onboarding audience ('technical' | 'non-technical'); drives onboarding copy.
    *  Mirrors src/main/config.ts. */
   audience?: 'technical' | 'non-technical';
@@ -283,7 +285,7 @@ export interface HarnessConfig {
   strongKeepalive?: boolean;
   /** Auto-update from GitHub releases (default ON; Settings → General). */
   autoUpdate?: boolean;
-  /** Anonymous product analytics (default ON, opt-out; see TELEMETRY.md).
+  /** Anonymous product analytics (default OFF, explicit opt-in; see TELEMETRY.md).
    *  Mirrors main + renderer HarnessConfig. */
   telemetryEnabled?: boolean;
   slackEnabled?: boolean;

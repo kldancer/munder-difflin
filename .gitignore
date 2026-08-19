@@ -27,3 +27,6 @@ docs/media/*.mov
 docs/media/MunderDifflin*.mp4
 
 .idea/
+
+# local task state, runtime evidence, and private credentials
+.work/

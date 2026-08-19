@@ -6,6 +6,7 @@ import { SpritePortrait } from './SpritePortrait';
 import { ProviderLogo } from './ProviderLogo';
 import { AGENT_PROVIDER_PRESETS, modelsForProvider, type AgentProvider, type HarnessConfig } from '@/store/config';
 import { canReceiveInbox, providerPreset } from '@shared/agentProvider';
+import { SAFE_DEFAULTS } from '@shared/safetyDefaults';
 
 export interface OnboardingWizardProps {
   onComplete: (config: HarnessConfig) => void;
@@ -88,10 +89,10 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
   const [home, setHome] = useState<string>('');
   const [repos, setRepos] = useState<string[]>([]);
-  const [autoMode, setAutoMode] = useState<boolean>(true);
-  // Anonymous usage stats (TELEMETRY.md). Default ON (opt-out); persisted by
-  // finish() so unchecking before finishing means nothing is ever sent.
-  const [shareStats, setShareStats] = useState<boolean>(true);
+  const [autoMode, setAutoMode] = useState<boolean>(SAFE_DEFAULTS.autoMode);
+  // Anonymous usage stats (TELEMETRY.md). Default OFF (explicit opt-in);
+  // finish() persists the user's choice without changing existing installs.
+  const [shareStats, setShareStats] = useState<boolean>(SAFE_DEFAULTS.telemetryEnabled);
   const [godProvider, setGodProvider] = useState<AgentProvider>('claude');
   const [godModel, setGodModel] = useState<string | undefined>(
     providerPreset('claude').recommendedOrchestratorModel
@@ -568,8 +569,8 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 </label>
                 <div style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>
                   {plain
-                    ? 'Best when agents work in their own projects. You can change this later, including for individual agents.'
-                    : 'The right default for the "control room" experience; a foot-gun on production repos. Override per agent in the Add Agent dialog.'}
+                    ? 'Keep this off until you trust the project and task. You can enable it later, including for individual agents.'
+                    : 'Off is the safe default. Auto Mode bypasses approval and sandbox controls; enable it only for a trusted, isolated project.'}
                 </div>
 
                 <div style={{ height: 1, background: 'var(--cth-ink-300)', margin: '2px 0' }} />

@@ -28,6 +28,7 @@ import { TaskDetailOverlay } from '@/components/TaskDetailOverlay';
 import { FullscreenFileEditor } from '@/components/FullscreenFileEditor';
 import { IdePanel } from '@/ide/IdePanel';
 import { useHoldOptionToTalk } from '@/freeflow/holdOption';
+import { setRendererLocale } from '@/i18n/LocaleProvider';
 import brandLogo from '@brand/logo.png?url';
 
 // Injected at build time from package.json (see electron.vite.config.ts).
@@ -91,6 +92,7 @@ export function App() {
     window.cth.getConfig().then(c => {
       if (cancelled) return;
       setConfig(c);
+      void setRendererLocale(c.locale);
       // Mirror the Free Flow flag into the store so the composer mic button shows
       // only when enabled (Settings keeps this in sync on save).
       useStore.getState().setFreeflowEnabled(!!c.freeflowEnabled);

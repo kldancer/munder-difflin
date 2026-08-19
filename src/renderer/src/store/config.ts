@@ -12,6 +12,7 @@ import type {
   OrgTriggerConfig,
   WebhookTrigger
 } from '@shared/triggers';
+import type { AppLocale } from '@shared/i18n';
 
 export {
   AGENT_PROVIDER_PRESETS,
@@ -52,6 +53,7 @@ export interface KnowledgeGraphConfig {
 
 export interface HarnessConfig {
   onboardingComplete: boolean;
+  locale: AppLocale;
   /** Self-identified audience from the first onboarding screen ('technical' vs
    *  'non-technical') — drives the copy register across onboarding. Mirrors
    *  src/main/config.ts. */

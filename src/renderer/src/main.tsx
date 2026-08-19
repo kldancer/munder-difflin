@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { LocaleProvider } from './i18n/LocaleProvider';
 import brandLogo from '@brand/logo.png?url';
 import './design/global.css';
 
@@ -24,6 +25,8 @@ if (!root) throw new Error('No root element');
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <LocaleProvider>
+      <App />
+    </LocaleProvider>
   </StrictMode>
 );

@@ -12,6 +12,8 @@ import {
 import { defaultMcpDefaults } from '../shared/mcpCatalog';
 import { expandTilde, normalizeHiveHome } from './fs';
 import type { IntegrationRecord } from '../shared/integrations';
+import { DEFAULT_LOCALE, normalizeLocale, type AppLocale } from '../shared/i18n';
+import { SAFE_DEFAULTS } from '../shared/safetyDefaults';
 import {
   DEFAULT_CONTEXT_TRIGGER,
   DEFAULT_ORG_TRIGGER,
@@ -168,6 +170,8 @@ export interface KnowledgeGraphConfig {
 export interface HarnessConfig {
   /** Has the user completed the first-run onboarding? */
   onboardingComplete: boolean;
+  /** UI language. Stable ids are never translated; only display text follows this locale. */
+  locale: AppLocale;
   /** Self-identified audience picked on the first onboarding screen. Drives the
    *  copy register everywhere onboarding explains itself: 'technical' shows CLI /
    *  flag lingo, 'non-technical' explains each concept in plain language. Unset =
@@ -287,7 +291,7 @@ export interface HarnessConfig {
    *  harness agents only; the user's global Claude theme is never touched. */
   terminalTheme?: 'light' | 'dark';
   /** Anonymous product analytics (PostHog) — the exact events/properties are
-   *  documented in TELEMETRY.md. Default ON (opt-out, like autoUpdate); builds
+   *  documented in TELEMETRY.md. Default OFF (explicit opt-in); builds
    *  without an injected key and environments with DO_NOT_TRACK set never send
    *  regardless of this flag. (Mirrored in preload + renderer config.) */
   telemetryEnabled?: boolean;
@@ -402,10 +406,11 @@ export interface HarnessConfig {
 
 const DEFAULTS: HarnessConfig = {
   onboardingComplete: false,
+  locale: DEFAULT_LOCALE,
   harnessHome: null,
   recentHives: [],
   registeredRepos: [],
-  autoMode: true,
+  autoMode: SAFE_DEFAULTS.autoMode,
   defaultCommand: 'claude',
   godProvider: 'claude',
   godModel: 'claude-opus-4-8',
@@ -426,11 +431,11 @@ const DEFAULTS: HarnessConfig = {
   notifications: false,
   strongKeepalive: false,
   autoUpdate: true,
-  telemetryEnabled: true,
+  telemetryEnabled: SAFE_DEFAULTS.telemetryEnabled,
   multiWindow: true,
   tvShowOffices: false,
   officeTheme: 'office',
-  slackEnabled: false,
+  slackEnabled: SAFE_DEFAULTS.slackEnabled,
   slackSigningSecret: undefined,
   slackBotToken: undefined,
   slackChannelId: undefined,
@@ -441,7 +446,7 @@ const DEFAULTS: HarnessConfig = {
   freeflowModel: 'whisper-large-v3-turbo',
   realtimeVoiceEnabled: false,
   realtimeIdleDisconnectMs: 180_000,
-  webhookEnabled: false,
+  webhookEnabled: SAFE_DEFAULTS.webhookEnabled,
   webhookSecret: undefined,
   webhookPort: undefined,
   // Triggers. These three are the ONLY object/array defaults that get handed
@@ -489,6 +494,7 @@ function configPath(): string {
 function withTriggerDefaults(cfg: HarnessConfig): HarnessConfig {
   return {
     ...cfg,
+    locale: normalizeLocale(cfg.locale),
     contextTrigger: {
       compact: { ...DEFAULT_CONTEXT_TRIGGER.compact, ...cfg.contextTrigger?.compact },
       clear: { ...DEFAULT_CONTEXT_TRIGGER.clear, ...cfg.contextTrigger?.clear }
@@ -589,7 +595,11 @@ function persistConfig(next: HarnessConfig): HarnessConfig {
 
 export function writeConfig(patch: Partial<HarnessConfig>): HarnessConfig {
   const current = readConfig();
-  const next: HarnessConfig = { ...current, ...patch };
+  const next: HarnessConfig = {
+    ...current,
+    ...patch,
+    locale: normalizeLocale(patch.locale ?? current.locale)
+  };
   // Project INGESTION — a registered repo is typed by hand ("~/dev/foo") as often
   // as it is picked from the folder dialog. Expand `~` here so the persisted list
   // (and therefore every agent's default cwd) is ABSOLUTE; Node's fs/spawn treat

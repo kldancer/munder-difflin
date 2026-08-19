@@ -203,7 +203,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     try { await window.cth.updateConfig({ audience: next ? 'non-technical' : 'technical' } as Partial<HarnessConfig>); }
     catch { setSimpleMode(!next); }
   };
-  const [autoModeOn, setAutoModeOn] = useState<boolean>(cfgX.autoMode !== false);
+  const [autoModeOn, setAutoModeOn] = useState<boolean>(cfgX.autoMode === true);
   const toggleAutoMode = async () => {
     const next = !autoModeOn;
     setAutoModeOn(next);
@@ -383,7 +383,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   };
 
   // ─── Anonymous usage stats (default ON = opt-out; contract in TELEMETRY.md) ─
-  const [telemetryOn, setTelemetryOn] = useState<boolean>(config.telemetryEnabled !== false);
+  const [telemetryOn, setTelemetryOn] = useState<boolean>(config.telemetryEnabled === true);
   const toggleTelemetry = async () => {
     const next = !telemetryOn;
     setTelemetryOn(next);

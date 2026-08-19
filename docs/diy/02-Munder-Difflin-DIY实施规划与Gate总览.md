@@ -113,7 +113,7 @@ lsof -nP -iTCP:5173 -sTCP:LISTEN || true
 4. “代码写完”不等于完成，必须有适用验证、运行事实和 `.work` 收据；
 5. 如果首包需要新产品选择、凭据、付费调用或真实公网，保持 `阻塞` 并回交用户；商业化不是当前工作包。
 
-当前首个未完成关键工作包：`W0.1 Node 22 与工作区/收据基线`。
+当前首个未完成关键工作包：`W1.1 中文主入口` 与 `W2.1 Codex executable 来源`（`G0` 后互斥 Lane 并行）。
 
 ## 5. 总体 Lane 与依赖 DAG
 
@@ -279,10 +279,10 @@ flowchart LR
 
 | ID | 状态 | 目标与写集合 | 非目标 | 完成与 Gate |
 | --- | --- | --- | --- | --- |
-| `W0.1` | **待开始·首包** | 固定 Node 22 开发基线；增加 `.work/` 忽略与收据目录合同。写：`.nvmrc`/等价版本文件、`.gitignore`、必要的 `package.json/package-lock.json` | 不升级业务依赖，不改 UI/Provider，不清理 `.idea` | Node 22 下安装无非预期 lock 漂移；`V1 typecheck`、`V2 focused`、`V3 build`；记录原生 ABI 与退出码 |
-| `W0.2` | 待开始 | 建立 `zh-CN/en-US` i18n 事实层、英文回退、插值/复数、locale 持久化和 CJK 字体栈。写：`src/shared/i18n/**`、`src/main/config.ts`、Renderer locale hook/provider、字体 CSS、必要依赖 | 不迁移具体页面，不改 Preload/Hive/Provider 协议，不引入许可不明字体 | locale 切换可重渲染并持久化；Main 可独立 `t()`；Key/fallback/插值测试通过；字体许可清晰 |
-| `W0.3` | 待开始 | 安全默认值：Auto Mode、遥测和公网入口默认关闭。写：`src/main/config.ts`、`OnboardingWizard.tsx`、相关配置测试 | 不重做权限系统，不自动迁移用户既有显式选择 | 新装默认关闭；旧配置兼容；Provider bypass flag 不被误附加；配置测试和 Onboarding UI 事实闭合 |
-| `G0` | 待开始 | Wave 0 跨包 Gate | 不扩展业务功能 | `P0+V1+V2+V3` 全部成立；`.work` 收据可用；无用户脏变更污染 |
+| `W0.1` | **通过** | 固定 Node 22 开发基线；增加 `.work/` 忽略与收据目录合同。写：`.nvmrc`/等价版本文件、`.gitignore`、必要的 `package.json/package-lock.json` | 不升级业务依赖，不改 UI/Provider，不清理 `.idea` | Node 22 下安装无非预期 lock 漂移；`V1 typecheck`、`V2 focused`、`V3 build`；记录原生 ABI 与退出码 |
+| `W0.2` | **通过** | 建立 `zh-CN/en-US` i18n 事实层、英文回退、插值/复数、locale 持久化和 CJK 字体栈。写：`src/shared/i18n/**`、`src/main/config.ts`、Renderer locale hook/provider、字体 CSS、必要依赖 | 不迁移具体页面，不改 Preload/Hive/Provider 协议，不引入许可不明字体 | locale 切换可重渲染并持久化；Main 可独立 `t()`；Key/fallback/插值测试通过；字体许可清晰 |
+| `W0.3` | **通过** | 安全默认值：Auto Mode、遥测和公网入口默认关闭。写：`src/main/config.ts`、`OnboardingWizard.tsx`、相关配置测试 | 不重做权限系统，不自动迁移用户既有显式选择 | 新装默认关闭；旧配置兼容；Provider bypass flag 不被误附加；配置测试和 Onboarding UI 事实闭合 |
+| `G0` | **通过** | Wave 0 跨包 Gate | 不扩展业务功能 | `P0+V1+V2+V3` 全部成立；`.work` 收据可用；无用户脏变更污染 |
 
 ### Wave 1：中文 UI Lane
 
