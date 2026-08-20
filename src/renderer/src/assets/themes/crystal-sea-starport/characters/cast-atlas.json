@@ -1,0 +1,209 @@
+{
+  "version": 1,
+  "theme": "starship",
+  "portraitSize": [
+    18,
+    28
+  ],
+  "frameSize": [
+    18,
+    32
+  ],
+  "frameColumns": 7,
+  "directionRows": [
+    "down",
+    "up",
+    "right"
+  ],
+  "actionColumns": [
+    "walk1",
+    "walk2",
+    "walk3",
+    "type1",
+    "type2",
+    "read1",
+    "read2"
+  ],
+  "characters": {
+    "michael": {
+      "portrait": [
+        0,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        0,
+        0
+      ]
+    },
+    "jim": {
+      "portrait": [
+        18,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        126,
+        0
+      ]
+    },
+    "pam": {
+      "portrait": [
+        36,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        252,
+        0
+      ]
+    },
+    "dwight": {
+      "portrait": [
+        54,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        378,
+        0
+      ]
+    },
+    "kevin": {
+      "portrait": [
+        72,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        504,
+        0
+      ]
+    },
+    "angela": {
+      "portrait": [
+        90,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        0,
+        96
+      ]
+    },
+    "oscar": {
+      "portrait": [
+        108,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        126,
+        96
+      ]
+    },
+    "stanley": {
+      "portrait": [
+        126,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        252,
+        96
+      ]
+    },
+    "phyllis": {
+      "portrait": [
+        144,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        378,
+        96
+      ]
+    },
+    "andy": {
+      "portrait": [
+        162,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        504,
+        96
+      ]
+    },
+    "kelly": {
+      "portrait": [
+        180,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        0,
+        192
+      ]
+    },
+    "ryan": {
+      "portrait": [
+        198,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        126,
+        192
+      ]
+    },
+    "toby": {
+      "portrait": [
+        216,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        252,
+        192
+      ]
+    },
+    "creed": {
+      "portrait": [
+        234,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        378,
+        192
+      ]
+    },
+    "meredith": {
+      "portrait": [
+        252,
+        0,
+        18,
+        28
+      ],
+      "atlasOrigin": [
+        504,
+        192
+      ]
+    }
+  }
+}

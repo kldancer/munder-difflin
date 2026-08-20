@@ -8,6 +8,10 @@
 
 import { Texture } from 'pixi.js';
 import { paintPortrait, sceneFrameBufs, SCENE_W, SCENE_H } from './portraitArt';
+import { themedPortraitBuf, themedSceneFrameBufs } from './themeCharacterArt';
+import { getThemeCharacterFrames, paintThemeCharacterPortrait } from './themeCharacterAssets';
+import type { CharacterThemeId } from './themedCast';
+export type { CharacterThemeId } from './themedCast';
 
 export type OfficeCharacterName =
   | 'michael' | 'jim' | 'pam' | 'dwight' | 'kevin' | 'angela'
@@ -52,7 +56,7 @@ export function hexToNumber(hex: string): number {
 }
 
 // ─── scene frames ────────────────────────────────────────────────────────────
-const frameCache = new Map<OfficeCharacterName, Texture[][]>();
+const frameCache = new Map<string, Texture[][]>();
 
 function bufToTexture(buf: Uint8ClampedArray): Texture {
   const canvas = document.createElement('canvas');
@@ -68,22 +72,24 @@ function bufToTexture(buf: Uint8ClampedArray): Texture {
 
 /**
  * Frame grid CharacterSprite expects: 3 rows (down, up, right) × 7 frames
- * [walk1, walk2, walk3, type1, type2, read1, read2]. We provide a front view
- * (down — and reused for the side row, so left/right walkers still show a face)
- * and a back view (up — agents seated facing their desk show their back). The
- * three walk frames are stand / step-left / step-right.
+ * [walk1, walk2, walk3, type1, type2, read1, read2]. Built-in visual skins load
+ * real down / up / right bitmap rows; left continues to mirror the right row.
+ * Office retains its procedural fallback until its own atlas is replaced.
  */
-export async function getCastFrames(name: OfficeCharacterName): Promise<Texture[][]> {
-  const cached = frameCache.get(name);
+export async function getCastFrames(name: OfficeCharacterName, theme: CharacterThemeId = 'office'): Promise<Texture[][]> {
+  const cacheKey = `${theme}:${name}`;
+  const cached = frameCache.get(cacheKey);
   if (cached) return cached;
-  const { front, back } = sceneFrameBufs(name);
-  const toRow = (bufs: Uint8ClampedArray[]): Texture[] => {
-    const [stand, stepL, stepR] = bufs.map(bufToTexture);
-    return [stand, stepL, stepR, stand, stand, stand, stand];
-  };
+  const themedAssetFrames = await getThemeCharacterFrames(name, theme);
+  if (themedAssetFrames) {
+    frameCache.set(cacheKey, themedAssetFrames);
+    return themedAssetFrames;
+  }
+  const { front, back } = theme === 'office' ? sceneFrameBufs(name) : themedSceneFrameBufs(name, theme);
+  const toRow = (bufs: Uint8ClampedArray[]): Texture[] => bufs.map(bufToTexture);
   const frontRow = toRow(front);
   const frames: Texture[][] = [frontRow, toRow(back), frontRow]; // down, up, right
-  frameCache.set(name, frames);
+  frameCache.set(cacheKey, frames);
   return frames;
 }
 
@@ -95,6 +101,21 @@ export async function paintCastPortrait(
   ctx: CanvasRenderingContext2D,
   name: OfficeCharacterName,
   scale = 2,
+  theme: CharacterThemeId = 'office',
 ): Promise<void> {
-  paintPortrait(ctx, name, scale);
+  if (theme === 'office') {
+    paintPortrait(ctx, name, scale);
+    return;
+  }
+  if (await paintThemeCharacterPortrait(ctx, name, scale, theme)) return;
+  const buf = themedPortraitBuf(name, theme);
+  const canvas = document.createElement('canvas');
+  canvas.width = 18; canvas.height = 28;
+  const stage = canvas.getContext('2d')!;
+  const img = stage.createImageData(18, 28);
+  img.data.set(buf);
+  stage.putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, 18 * scale, 28 * scale);
+  ctx.drawImage(canvas, 0, 0, 18, 28, 0, 0, 18 * scale, 28 * scale);
 }

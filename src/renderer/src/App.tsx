@@ -17,6 +17,7 @@ import { CompletionToast } from '@/realtime/CompletionToast';
 import { UpdateToast } from '@/components/UpdateToast';
 import { UpdateBadge } from '@/components/UpdateBadge';
 import { useAppTheme, toggleAppTheme } from '@/design/theme';
+import { projectOfficeSkin } from '@/design/officeSkin';
 import { SettingsModal, type Section as SettingsSection } from '@/components/SettingsModal';
 import { PixelPanel } from '@/components/PixelPanel';
 import { PixelButton } from '@/components/PixelButton';
@@ -45,11 +46,16 @@ export function App() {
   const godStatus = useStore(s => s.godStatus);
   const fullscreenAgentId = useStore(s => s.fullscreenAgentId);
   const appThemeNow = useAppTheme();
+  const officeTheme = useStore(s => s.officeTheme);
   const fullscreenFilePath = useStore(s => s.fullscreenFilePath);
   const sidebarWidth = useStore(s => s.sidebarWidth);
   const setSidebarWidth = useStore(s => s.setSidebarWidth);
   const ideOpen = useStore(s => s.ideOpen);
   const setIdeOpen = useStore(s => s.setIdeOpen);
+
+  // Keep one root-level office-skin projection; the existing DOM and app-theme
+  // contract remain unchanged and CSS owns the small shell treatment.
+  useEffect(() => { projectOfficeSkin(officeTheme); }, [officeTheme]);
 
   const [config, setConfig] = useState<HarnessConfig | null>(null);
   // Whether the user has passed the launch-time hive picker this session. Starts
@@ -258,8 +264,8 @@ export function App() {
         className="cth-titlebar-drag"
         style={{
           height: 36, minHeight: 36,
-          background: 'linear-gradient(180deg, var(--cth-cream-100) 0%, var(--cth-cream-200) 100%)',
-          borderBottom: '1px solid var(--cth-ink-300)',
+          background: 'var(--cth-skin-ground)',
+          borderBottom: '1px solid var(--cth-skin-border)',
           display: 'flex',
           alignItems: 'center',
           paddingLeft: narrowLayout ? 76 : 96,

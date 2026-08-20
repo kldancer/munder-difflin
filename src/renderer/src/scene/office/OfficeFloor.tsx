@@ -5,7 +5,7 @@ import 'pixi.js/unsafe-eval';
 import { useStore, type Agent } from '@/store/store';
 import { TiledMapRenderer } from './TiledMapRenderer';
 import { Camera } from './Camera';
-import { Character, paintCup } from './Character';
+import { Character, CHARACTER_FOOTPRINT_RADIUS, paintCup } from './Character';
 import { DeskScreen } from './DeskScreen';
 import { MessageEnvelope, type MessageAct } from './MessageEnvelope';
 import { hexToNumber, DEFAULT_CHARACTER } from './cast';
@@ -275,6 +275,9 @@ export function OfficeFloor() {
       const tilesetTextures = await Promise.all(
         themeTilesetUrls(theme).map(loadTexture),
       );
+      const backgroundTexture = theme.backgroundUrl
+        ? await loadTexture(theme.backgroundUrl)
+        : undefined;
       if (mountIdRef.current !== mountId) { safeDestroy(app); return; }
 
       const world = new Container();
@@ -287,7 +290,13 @@ export function OfficeFloor() {
       // walkability, anchors and the character container, so a theme switch
       // cannot alter agent identity or lifecycle state.
       const root = mapRenderer.getContainer();
-      const visuals = createThemeVisuals(theme, mapRenderer.width, mapRenderer.height, mapRenderer.tileSize);
+      const visuals = createThemeVisuals(
+        theme,
+        mapRenderer.width,
+        mapRenderer.height,
+        mapRenderer.tileSize,
+        backgroundTexture,
+      );
       root.addChildAt(visuals, Math.max(0, root.children.length - 1));
       const charLayer = mapRenderer.getCharacterContainer();
       const tileCount = mapRenderer.getContainer().children.reduce(
@@ -1402,6 +1411,35 @@ export function OfficeFloor() {
           seatTile,
           seatDirection: facingForSeat(seatTile),
           spawnTile: entrance, // walk in from the office door
+          isTileOccupied: (tile, selfId) => {
+            for (const [id, runtime] of runtimes) {
+              if (id === selfId || !runtime.character.isVisible) continue;
+              const occupied = runtime.character.getTilePosition();
+              if (occupied.x === tile.x && occupied.y === tile.y) return true;
+            }
+            return false;
+          },
+          isFootprintBlocked: (px, py, selfId) => {
+            const minDistance = CHARACTER_FOOTPRINT_RADIUS * 2;
+            const self = runtimes.get(selfId)?.character.getPixelPosition();
+            for (const [id, runtime] of runtimes) {
+              if (id === selfId || !runtime.character.isVisible) continue;
+              const other = runtime.character.getPixelPosition();
+              const distance = Math.hypot(other.x - px, other.y - py);
+              if (distance >= minDistance) continue;
+              // Every restored agent enters through the same door. Resolve that
+              // intentional initial overlap deterministically: the lowest id
+              // leaves first, then the next. Once separating, that agent may
+              // keep moving until the capsules no longer overlap. Approaching
+              // footprints remain symmetric and can never pass through.
+              const currentDistance = self
+                ? Math.hypot(other.x - self.x, other.y - self.y)
+                : distance;
+              if (selfId.localeCompare(id) < 0 && distance > currentDistance) continue;
+              return true;
+            }
+            return false;
+          },
           glowColor: hexNum(colors.accent[agent.accent]) ?? hexToNumber(member.shirt),
           onClick: (id) => useStore.getState().select(id),
         });

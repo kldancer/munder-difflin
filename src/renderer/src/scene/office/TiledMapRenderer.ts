@@ -49,6 +49,7 @@ export interface Point { x: number; y: number; }
 
 const TILE_LAYERS = ['floor', 'walls', 'furniture-below', 'furniture-above'] as const;
 const COLLISION_LAYER = 'collision';
+const COLLISION_GEOMETRY_LAYER = 'collision-geometry';
 const SPAWN_POINTS_LAYER = 'spawn-points';
 const ZONES_LAYER = 'zones';
 
@@ -58,6 +59,7 @@ export class TiledMapRenderer {
   readonly tileSize: number;
 
   private walkabilityGrid: boolean[][] = [];
+  private collisionRects: ZoneRect[] = [];
   private spawnPoints: Map<string, Point> = new Map();
   private zones: Map<string, ZoneRect> = new Map();
   private characterContainer: Container;
@@ -73,6 +75,7 @@ export class TiledMapRenderer {
     this.characterContainer = new Container();
     this.characterContainer.sortableChildren = true;
 
+    this.parseCollisionGeometry();
     this.parseCollisionLayer();
     this.parseSpawnPoints();
     this.markWalkableSpawnPoints();
@@ -86,6 +89,24 @@ export class TiledMapRenderer {
   isWalkable(tx: number, ty: number): boolean {
     if (tx < 0 || ty < 0 || tx >= this.width || ty >= this.height) return false;
     return this.walkabilityGrid[ty][tx];
+  }
+
+  /** Fine static collision in logical map pixels. The character position is
+   *  its bottom-centre foot anchor; only the small feet circle participates.
+   *  The coarse tile grid remains the global BFS accelerator, while this check
+   *  prevents clipping table edges and wall corners between tile anchors. */
+  isFootprintWalkable(px: number, py: number, radius: number): boolean {
+    const mapWidth = this.width * this.tileSize;
+    const mapHeight = this.height * this.tileSize;
+    if (px - radius < 0 || py - radius < 0 || px + radius > mapWidth || py + radius > mapHeight) return false;
+    for (const rect of this.collisionRects) {
+      const closestX = Math.max(rect.x, Math.min(px, rect.x + rect.width));
+      const closestY = Math.max(rect.y, Math.min(py, rect.y + rect.height));
+      const dx = px - closestX;
+      const dy = py - closestY;
+      if (dx * dx + dy * dy < radius * radius) return false;
+    }
+    return true;
   }
 
   tileToPixel(tx: number, ty: number): Point {
@@ -138,6 +159,17 @@ export class TiledMapRenderer {
         const rawId = layer.data[y * this.width + x];
         if ((rawId & TILE_ID_MASK) !== 0) this.walkabilityGrid[y][x] = false;
       }
+    }
+  }
+
+  private parseCollisionGeometry(): void {
+    const layer = this.findLayer(COLLISION_GEOMETRY_LAYER, 'objectgroup');
+    this.collisionRects = [];
+    for (const obj of layer?.objects ?? []) {
+      const width = obj.width ?? 0;
+      const height = obj.height ?? 0;
+      if (width <= 0 || height <= 0) continue;
+      this.collisionRects.push({ x: obj.x, y: obj.y, width, height });
     }
   }
 

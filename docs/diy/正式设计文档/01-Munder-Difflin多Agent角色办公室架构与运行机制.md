@@ -10,6 +10,7 @@
 | 不负责 | 实施阶段、一次性验证结果、临时运行目录、真实 Session ID、密钥和排查流水 |
 | 产品与架构结论 | 本文第 2～4 节；Wave 6 及后续能力取舍见 [正式实施规划](../实施规划/03-Munder-Difflin-Wave-6及后续设计结论与实施规划.md) |
 | 长期运行合同 | [个人长期运行安全与备份恢复设计](02-Munder-Difflin个人长期运行安全与备份恢复设计.md) |
+| 主题视觉合同 | [内置主题视觉与低风险换肤设计](03-Munder-Difflin内置主题视觉与低风险换肤设计.md) |
 | 核心实现 | [`src/main/hive.ts`](../../../src/main/hive.ts)、[`src/shared/agentProvider.ts`](../../../src/shared/agentProvider.ts)、[`src/renderer/src/hooks/useHive.ts`](../../../src/renderer/src/hooks/useHive.ts) |
 
 本文只维护稳定设计合同。动态证据属于 `.work/`，不得把 API Key、临时进程号、运行 Session ID 或某次 pass/fail 复制进本文。
@@ -577,6 +578,7 @@ Command Center 的生命周期容量报告只遍历目录项并读取文件元�
 | Renderer 空闲门控、Hook 投影与消息队列投递 | [`src/renderer/src/hooks/useHive.ts`](../../../src/renderer/src/hooks/useHive.ts) |
 | Renderer Agent、队列和恢复状态 | [`src/renderer/src/store/store.ts`](../../../src/renderer/src/store/store.ts) |
 | 中文角色创建与模板 | [`src/renderer/src/components/AddAgentModal.tsx`](../../../src/renderer/src/components/AddAgentModal.tsx) |
+| 内置主题、地图视觉与无损换肤 | [`src/renderer/src/scene/office/themeRegistry.ts`](../../../src/renderer/src/scene/office/themeRegistry.ts)、[`src/renderer/src/scene/office/OfficeFloor.tsx`](../../../src/renderer/src/scene/office/OfficeFloor.tsx)；视觉合同见 [内置主题视觉与低风险换肤设计](03-Munder-Difflin内置主题视觉与低风险换肤设计.md) |
 | Hive IPC 类型与 Renderer 安全边界 | [`src/preload/index.ts`](../../../src/preload/index.ts) |
 
 ## 17. 本文维护规则

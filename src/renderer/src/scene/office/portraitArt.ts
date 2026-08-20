@@ -444,9 +444,32 @@ function drawHeadBackBald(buf: Buf, r: Recipe): void {
   rect(buf, 7, 15, 9, 15, s.base);
 }
 
-function drawSceneBody(buf: Buf, r: Recipe, phase: number, back: boolean): void {
+type SceneAction = 'walk' | 'type1' | 'type2' | 'read1' | 'read2';
+
+function drawSceneAction(buf: Buf, r: Recipe, action: SceneAction, back: boolean): void {
+  if (action === 'walk') return;
+  const [, cloth, shade] = shades(r.c1);
+  // Minimal pose cues: a hand on the desk for typing, or a small document held
+  // at chest height for reading. These are pixel overlays, not a new animation model.
+  if (action === 'type1' || action === 'type2') {
+    set(buf, 6, 22, cloth); set(buf, 11, 22, shade);
+    // Fixed dark cuff pixels make each typing pose observably distinct even
+    // when the garment palette happens to match the base torso pixels.
+    set(buf, action === 'type1' ? 2 : 3, 23, OUTLINE);
+    if (action === 'type2') { set(buf, 5, 23, cloth); set(buf, 12, 23, shade); }
+  } else {
+    const paper: RGB = back ? shade : [244, 240, 220];
+    set(buf, 7, 21, paper); set(buf, 8, 21, paper); set(buf, 9, 21, paper); set(buf, 10, 21, paper);
+    set(buf, 7, 22, paper); set(buf, 10, 22, paper);
+    set(buf, action === 'read1' ? 8 : 9, 23, action === 'read1' ? [17, 23, 31] : [31, 23, 17]);
+    if (action === 'read2') { set(buf, 8, 22, paper); set(buf, 9, 22, paper); }
+  }
+}
+
+function drawSceneBody(buf: Buf, r: Recipe, phase: number, back: boolean, action: SceneAction): void {
   drawSceneTorso(buf, r, back);
   drawSceneLegs(buf, defaultPants(r), phase);
+  drawSceneAction(buf, r, action, back);
 }
 
 // ─── outline pass ────────────────────────────────────────────────────────────
@@ -536,10 +559,10 @@ function compose(r: Recipe): Buf {
 }
 
 /** Full-body 18×32 scene sprite. `back=false` reuses the portrait's exact face. */
-function composeScene(r: Recipe, phase: number, back: boolean): Buf {
+function composeScene(r: Recipe, phase: number, back: boolean, action: SceneAction = 'walk'): Buf {
   CUR_W = SCENE_W; CUR_H = SCENE_H;
   const buf = new Uint8ClampedArray(SCENE_W * SCENE_H * 4);
-  drawSceneBody(buf, r, phase, back);
+  drawSceneBody(buf, r, phase, back, action);
   if (back) drawHeadBack(buf, r);
   else drawHeadGroup(buf, r);
   outlinePass(buf);
@@ -559,16 +582,29 @@ function getBuf(name: OfficeCharacterName): Buf {
   return buf;
 }
 
+/** Raw deterministic 18×28 portrait buffer for theme projections. */
+export function portraitFrameBuf(name: OfficeCharacterName): Buf {
+  return getBuf(name).slice();
+}
+
 export interface SceneFrames { front: Buf[]; back: Buf[]; }
 
-/** Walk-phase frames (stand, step-L, step-R) for the in-scene sprite, front + back. */
+/** Seven-slot frames: three walk frames plus deterministic type/read pose frames. */
 export function sceneFrameBufs(name: OfficeCharacterName): SceneFrames {
   let frames = sceneCache.get(name);
   if (!frames) {
     const r = RECIPES[name] ?? RECIPES.jim;
     frames = {
-      front: [composeScene(r, 0, false), composeScene(r, 1, false), composeScene(r, 2, false)],
-      back: [composeScene(r, 0, true), composeScene(r, 1, true), composeScene(r, 2, true)],
+      front: [
+        composeScene(r, 0, false), composeScene(r, 1, false), composeScene(r, 2, false),
+        composeScene(r, 0, false, 'type1'), composeScene(r, 0, false, 'type2'),
+        composeScene(r, 0, false, 'read1'), composeScene(r, 0, false, 'read2'),
+      ],
+      back: [
+        composeScene(r, 0, true), composeScene(r, 1, true), composeScene(r, 2, true),
+        composeScene(r, 0, true, 'type1'), composeScene(r, 0, true, 'type2'),
+        composeScene(r, 0, true, 'read1'), composeScene(r, 0, true, 'read2'),
+      ],
     };
     sceneCache.set(name, frames);
   }

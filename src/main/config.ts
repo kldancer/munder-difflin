@@ -299,7 +299,7 @@ export interface HarnessConfig {
    *  the default office the visual "off" state and no longer exposes a gate. */
   tvShowOffices?: boolean;
   /** Which built-in visual theme the pixel office renders. */
-  officeTheme?: 'office' | 'starship' | 'friends' | 'brooklyn99' | 'siliconvalley' | 'got' | 'hogwarts';
+  officeTheme?: 'office' | 'starship' | 'starfield-farm' | 'friends' | 'brooklyn99' | 'siliconvalley' | 'got' | 'hogwarts';
   /** Per-CLI-provider local/self-hosted base URL (Ollama/LM Studio/vLLM, …) for the
    *  OpenCode/Crush/pi/qwen engines; applied at spawn (config-injection or proxy
    *  upstream). API KEYS are NOT stored here — they live write-only in the secret

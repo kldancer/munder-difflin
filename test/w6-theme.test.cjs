@@ -9,7 +9,7 @@ const loader = read('src/renderer/src/scene/office/themeLoader.ts');
 const visuals = read('src/renderer/src/scene/office/themeVisuals.ts');
 const floor = read('src/renderer/src/scene/office/OfficeFloor.tsx');
 
-test('W6.1 registers office and starship skins on one topology contract', () => {
+test('W6.1 registers office and starship skins on one renderer contract', () => {
   assert.match(registry, /\| 'office'/);
   assert.match(registry, /\| 'starship'/);
   assert.match(registry, /export const STARSHIP_THEME/);
@@ -34,7 +34,8 @@ test('failed theme loads are explicit instead of silently claiming office succes
   assert.doesNotMatch(loader, /falling back to 'office'/);
 });
 
-test('starship visuals are procedural and inserted as a visual-only layer', () => {
+test('starship keeps deterministic visual-only decoration over its full map asset', () => {
+  assert.match(registry, /backgroundUrl: crystalSeaStarportMapUrl/);
   assert.match(visuals, /createThemeVisuals/);
   assert.match(visuals, /visual-only/);
   assert.match(visuals, /stars/);

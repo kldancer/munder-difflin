@@ -135,7 +135,7 @@ const SETTING_POLICY: Record<string, {
 }> = {
   // soft: cosmetic / low-blast, instantly reversible
   notifications: { tier: 'soft', type: 'boolean' },
-  officeTheme: { tier: 'soft', type: 'string', values: ['office', 'starship'] },
+  officeTheme: { tier: 'soft', type: 'string', values: ['office', 'starship', 'starfield-farm'] },
   terminalTheme: { tier: 'soft', type: 'string', values: ['light', 'dark'] },
   freeflowEnabled: { tier: 'soft', type: 'boolean' },
   strongKeepalive: { tier: 'soft', type: 'boolean' },

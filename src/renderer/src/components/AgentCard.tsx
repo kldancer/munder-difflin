@@ -108,12 +108,15 @@ export function AgentCard({
    *  treatment that only exists on one side always looks like a mistake or a
    *  progress bar. Same 1px geometry as every other card, so the box is
    *  unchanged and the selection ring still means exactly one thing everywhere. */
-  const godSurface: React.CSSProperties = isGod
+  const cardSurface: React.CSSProperties = isGod
     ? {
         background: `var(--cth-${accent}-light)`,
         boxShadow: `inset 0 0 0 1px var(--cth-${accent})`
       }
-    : {};
+    : {
+        background: 'var(--cth-skin-surface)',
+        boxShadow: 'inset 0 0 0 1px var(--cth-skin-border)'
+      };
   const dropShadow = isGod
     ? `2px 3px 0 0 rgba(26,19,32,${hover ? 0.2 : 0.14})`
     : (hover ? '1px 2px 0 0 rgba(26,19,32,0.12)' : 'none');
@@ -165,8 +168,9 @@ export function AgentCard({
         </span>
       )}
       <PixelPanel
+        className="cth-agent-card"
         variant="default"
-        style={{ height: '100%', padding: '6px 8px', ...godSurface }}
+        style={{ height: '100%', padding: '6px 8px', ...cardSurface }}
         noPadding
       >
         <div style={{ display: 'flex', gap: 8, height: '100%' }}>

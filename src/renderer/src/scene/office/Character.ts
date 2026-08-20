@@ -30,6 +30,10 @@ export function paintCup(g: Graphics, x: number, y: number): void {
 }
 
 const SPEED = 48; // pixels/sec (tileSize=16)
+/** Characters collide at the feet, not across their hair/coat/props. A 3.5 px
+ * radius matches the native sprite's 6–7 px shoe span and still lets two agents
+ * pass through a two-tile corridor. */
+export const CHARACTER_FOOTPRINT_RADIUS = 3.5;
 // Slide the sprite when seated so it reads as "sitting on the chair" rather than
 // standing on the tile. The chair tile holds the chair/barrel, with the desk in
 // the tile the agent faces. The feet are anchored at the seat tile's bottom and
@@ -65,6 +69,11 @@ interface CharacterOptions {
   glowColor: number;
   /** Direction faced while seated. Default 'down' so the face is toward the user. */
   seatDirection?: Direction;
+  /** Dynamic planning occupancy at tile granularity. Static furniture remains
+   * authoritative in TiledMapRenderer's collision geometry and baked grid. */
+  isTileOccupied?: (tile: { x: number; y: number }, agentId: string) => boolean;
+  /** Fine local avoidance using the native-pixel foot capsule. */
+  isFootprintBlocked?: (px: number, py: number, agentId: string) => boolean;
   onClick?: (agentId: string) => void;
 }
 
@@ -91,6 +100,9 @@ export class Character {
   private idleLoopTimer = 0;
   private direction: Direction = 'down';
   private arrivalCallback: (() => void) | null = null;
+  private isTileOccupied?: CharacterOptions['isTileOccupied'];
+  private isFootprintBlocked?: CharacterOptions['isFootprintBlocked'];
+  private collisionWait = 0;
 
   public isVisible = false;
   private fadeDirection: 'in' | 'out' | null = null;
@@ -133,6 +145,8 @@ export class Character {
     this.sprite = new CharacterSprite(options.frames);
     this.deskTile = options.seatTile;
     this.seatDirection = options.seatDirection ?? 'down';
+    this.isTileOccupied = options.isTileOccupied;
+    this.isFootprintBlocked = options.isFootprintBlocked;
     this.onClick = options.onClick;
 
     // Appear at the spawn tile (the door) and walk in from there.
@@ -176,11 +190,18 @@ export class Character {
   }
 
   moveTo(tile: { x: number; y: number }): void {
-    const path = findPath(this.mapRenderer, this.getTilePosition(), tile);
+    const start = this.getTilePosition();
+    const path = findPath({
+      width: this.mapRenderer.width,
+      height: this.mapRenderer.height,
+      isWalkable: (x, y) => this.mapRenderer.isWalkable(x, y)
+        && (!this.isTileOccupied || !this.isTileOccupied({ x, y }, this.agentId)),
+    }, start, tile);
     if (path && path.length > 0) {
       this.sitting = false; // stand up before walking (clears the sit offset)
       this.sprite.setSeatedCrop(0); // show legs again while standing/walking
       this.path = path;
+      this.collisionWait = 0;
       this.state = 'walk';
       this.sprite.setAnimation('walk', this.direction);
     }
@@ -806,8 +827,36 @@ export class Character {
     }
 
     const step = Math.min(SPEED * dt, dist);
-    this.px += (dx / dist) * step;
-    this.py += (dy / dist) * step;
+    const nextPx = this.px + (dx / dist) * step;
+    const nextPy = this.py + (dy / dist) * step;
+    const staticBlocked = !this.mapRenderer.isFootprintWalkable(
+      nextPx,
+      nextPy,
+      CHARACTER_FOOTPRINT_RADIUS,
+    );
+    if (staticBlocked || this.isFootprintBlocked?.(nextPx, nextPy, this.agentId)) {
+      this.collisionWait += dt;
+      this.sprite.setAnimation('idle', this.direction);
+      // After a short courtesy wait, reroute around the occupied foot tile. If
+      // the corridor is genuinely single-file, retain the current path and wait
+      // for its owner to move instead of allowing overlap.
+      if (this.collisionWait >= 0.65) {
+        this.collisionWait = 0;
+        const goal = this.path[this.path.length - 1];
+        const start = this.getTilePosition();
+        const reroute = findPath({
+          width: this.mapRenderer.width,
+          height: this.mapRenderer.height,
+          isWalkable: (x, y) => this.mapRenderer.isWalkable(x, y)
+            && (!this.isTileOccupied || !this.isTileOccupied({ x, y }, this.agentId)),
+        }, start, goal);
+        if (reroute && reroute.length > 0) this.path = reroute;
+      }
+      return;
+    }
+    this.collisionWait = 0;
+    this.px = nextPx;
+    this.py = nextPy;
     this.direction = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
     this.sprite.setAnimation('walk', this.direction);
     this.sprite.setPosition(this.px, this.py);

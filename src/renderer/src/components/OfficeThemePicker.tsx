@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '@/store/store';
 import type { ThemeId } from '@/scene/office/themeRegistry';
+import type { OfficeSkin } from '@/design/officeSkin';
 import { loadTheme } from '@/scene/office/themeLoader';
 
 // Only complete bundles are clickable. A skin remounts the visual floor but
 // never kills, archives, or recreates an agent runtime.
-interface ThemeMeta { id: ThemeId; labelKey: string; blurbKey: string; swatch: string; }
+interface ThemeMeta { id: OfficeSkin; labelKey: string; blurbKey: string; swatch: string; }
 const THEME_META: ThemeMeta[] = [
   { id: 'office', labelKey: 'office', blurbKey: 'officeBlurb', swatch: '#6b5a4a' },
   { id: 'starship', labelKey: 'starship', blurbKey: 'starshipBlurb', swatch: '#102c62' },
+  { id: 'starfield-farm', labelKey: 'starfieldFarm', blurbKey: 'starfieldFarmBlurb', swatch: '#6e8d63' },
 ];
 
 export function OfficeThemePicker() {
@@ -20,17 +22,21 @@ export function OfficeThemePicker() {
   // App mirrors the persisted theme into the store at boot, and every successful
   // switch updates that same value. Reading it here avoids remounting Settings
   // from the stale, boot-time config prop after a prior switch.
-  const current = useStore((s) => s.officeTheme) as ThemeId;
+  const current = useStore((s) => s.officeTheme) as OfficeSkin;
   const setOfficeTheme = useStore((s) => s.setOfficeTheme);
 
-  const applyTheme = async (id: ThemeId) => {
+  const applyTheme = async (id: OfficeSkin) => {
     if (busy || id === current) return;
     setBusy(true);
     setNote('');
     try {
       // Validate before persisting. There is intentionally no lifecycle call:
       // IDs, PTYs, sessions, queues, memory and worktrees remain untouched.
+      // Keep the registry as the authority: an unregistered/incomplete bundle
+      // fails here and therefore cannot alter config or the store mirror.
       await loadTheme(id);
+      // The preload HarnessConfig type predates the shared registry's new ID;
+      // keep this compatibility cast at the IPC boundary only.
       await window.cth.updateConfig({ officeTheme: id });
       setOfficeTheme(id);
       setNote(t('w6.theme.switched'));
@@ -50,13 +56,13 @@ export function OfficeThemePicker() {
         <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>{t('w6.theme.title')}</span>
         <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>{t('w6.theme.help')}</span>
       </div>
-      <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+      <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
           {THEME_META.map((theme) => {
             const isCurrent = theme.id === current;
             return (
               <button key={theme.id} onClick={() => void applyTheme(theme.id)} disabled={busy}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left', padding: 8, cursor: busy ? 'default' : 'pointer', background: isCurrent ? 'var(--cth-paper-100)' : 'transparent', boxShadow: isCurrent ? 'inset 0 0 0 1.5px var(--cth-ink-500)' : 'inset 0 0 0 1px var(--cth-ink-300)', opacity: busy && !isCurrent ? 0.6 : 1 }}>
-                <span style={{ width: 28, height: 28, flexShrink: 0, background: theme.swatch, boxShadow: 'inset 0 0 0 1.5px var(--cth-ink-500)' }} />
+                <span style={{ width: 28, height: 28, flexShrink: 0, background: `linear-gradient(135deg, ${theme.swatch} 0 52%, color-mix(in srgb, ${theme.swatch} 58%, white) 52% 100%)`, boxShadow: 'inset 0 0 0 1.5px var(--cth-ink-500)' }} />
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-900)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t(`w6.theme.${theme.labelKey}`)}</span>

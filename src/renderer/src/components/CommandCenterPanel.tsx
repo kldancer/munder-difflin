@@ -149,15 +149,16 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
 
   return (
     <PixelPanel
+      className="cth-command-center"
       variant="default"
       noPadding
-      style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 0, overflow: 'hidden' }}
+      style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 0, overflow: 'hidden', background: 'var(--cth-skin-surface)', boxShadow: 'inset 0 0 0 1px var(--cth-skin-border)' }}
     >
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        padding: '6px 8px', background: 'var(--cth-cream-100)',
-        borderBottom: '1px solid var(--cth-ink-700)', flexShrink: 0
+        padding: '6px 8px', background: 'var(--cth-skin-surface)',
+        borderBottom: '1px solid var(--cth-skin-border)', flexShrink: 0
       }}>
         <div style={{
           width: 32, height: 32, background: `var(--cth-${agent.accent}-light)`,
@@ -247,8 +248,8 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
         // global.css already hides that scrollbar.
         flexWrap: fullscreen ? 'nowrap' : 'wrap',
         overflowX: fullscreen ? 'auto' : 'visible',
-        padding: '6px 8px', background: 'var(--cth-cream-100)',
-        borderBottom: '1px solid var(--cth-ink-700)', flexShrink: 0
+        padding: '6px 8px', background: 'var(--cth-skin-ground)',
+        borderBottom: '1px solid var(--cth-skin-border)', flexShrink: 0
       }}>
         {visibleTabs.map((t) => (
           <button

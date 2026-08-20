@@ -1,5 +1,12 @@
 /* Design tokens — mirrors tokens.ts. Update both together. */
 :root {
+  /* Office skin: deliberately limited to shell material, never typography,
+     spacing, status semantics, or terminal colors. */
+  --cth-skin-ground: var(--cth-cream-50);
+  --cth-skin-surface: var(--cth-paper-100);
+  --cth-skin-border: var(--cth-ink-300);
+  --cth-skin-active: var(--cth-sky);
+  --cth-skin-attention: var(--cth-coral);
   /* Base */
   --cth-cream-50:  #FFFDF5;
   --cth-cream-100: #FFF8E7;
@@ -92,6 +99,46 @@
   --cth-panel-border-inset:    inset 0 0 0 1px var(--cth-ink-100);
   --cth-panel-border-terminal: inset 0 0 0 1px var(--cth-ink-300);
   --cth-panel-border-dialog:   inset 0 0 0 1px var(--cth-ink-500);
+}
+
+:root[data-office-skin='starship'] {
+  --cth-skin-ground: #e8f4f6;
+  --cth-skin-surface: #f4fbfb;
+  --cth-skin-border: #70aeb8;
+  --cth-skin-active: #2b9caf;
+  --cth-skin-attention: #d9785f;
+}
+
+:root[data-office-skin='starfield-farm'] {
+  --cth-skin-ground: #f5efdc;
+  --cth-skin-surface: #fffaf0;
+  --cth-skin-border: #a98a61;
+  --cth-skin-active: #668b5b;
+  --cth-skin-attention: #c3943d;
+}
+
+/* Dark mode keeps each skin's material deep and restrained. */
+:root[data-cth-theme='dark'][data-office-skin='starship'] {
+  --cth-skin-ground: #182a36;
+  --cth-skin-surface: #202f3a;
+  --cth-skin-border: #416f7b;
+  --cth-skin-active: #5caebc;
+  --cth-skin-attention: #d88a73;
+}
+
+:root[data-cth-theme='dark'][data-office-skin='starfield-farm'] {
+  --cth-skin-ground: #2c2b25;
+  --cth-skin-surface: #36342b;
+  --cth-skin-border: #786744;
+  --cth-skin-active: #8eae78;
+  --cth-skin-attention: #d0a653;
+}
+
+/* Only existing shell surfaces consume the skin projection. */
+:root[data-office-skin] .cth-titlebar-drag,
+:root[data-office-skin] .cth-tabbar {
+  background-color: var(--cth-skin-ground);
+  border-color: var(--cth-skin-border);
 }
 
 /* Press Start 2P has no CJK glyphs. In Chinese, display labels use the same

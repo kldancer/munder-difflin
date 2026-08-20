@@ -85,8 +85,8 @@ export function AgentStrip({ config }: AgentStripProps) {
       padding: '14px 16px',
       overflowX: 'auto',
       overflowY: 'hidden',
-      borderTop: '1px solid var(--cth-ink-300)',
-      background: 'var(--cth-cream-200)',
+      borderTop: '1px solid var(--cth-skin-border)',
+      background: 'var(--cth-skin-ground)',
       // Tall enough for the god card to stand proud of the row (it's taller and
       // rides a drop shadow) plus the hover-lift on every card, without clipping.
       height: 112,

@@ -19,21 +19,28 @@ import {
   getCastFrames,
   DEFAULT_CHARACTER,
   type CastMember,
+  type CharacterThemeId,
   type OfficeCharacterName,
 } from './cast';
 
 import officeTilesetUrl from '@/assets/tilesets/office-tileset.png?url';
 import a5FloorsWallsUrl from '@/assets/tilesets/a5-office-floors-walls.png?url';
 import interiorsUrl from '@/assets/tilesets/interiors.png?url';
+import crystalSeaStarportMapUrl from '@/assets/themes/crystal-sea-starport/crystal-sea-starport-map-34x22.png?url';
+import starfieldFarmMapUrl from '@/assets/themes/starfield-farm/starfield-farm-map-34x22.png?url';
 // .tmj is Tiled JSON; imported as raw text and parsed by the loader.
 import officeMapRaw from '@/assets/maps/office.tmj?raw';
+import crystalSeaStarportMapRaw from '@/assets/maps/crystal-sea-starport.tmj?raw';
+import starfieldFarmMapRaw from '@/assets/maps/starfield-farm.tmj?raw';
 import brooklyn99MapRaw from '@/assets/maps/brooklyn99.tmj?raw';
 
-/** Theme identifiers. W6 adds a visual-only starship skin over the same office
- *  topology; the remaining show ids stay reserved until their assets exist. */
+/** Theme identifiers. Built-in skins share one renderer and object contract;
+ * high-fidelity skins may own a fixed-grid navigation projection aligned to
+ * their art. The remaining show ids stay reserved until their assets exist. */
 export type ThemeId =
   | 'office'
   | 'starship'
+  | 'starfield-farm'
   | 'friends'
   | 'brooklyn99'
   | 'siliconvalley'
@@ -115,7 +122,21 @@ export interface PaletteConfig {
     grid: number;
     accent: number;
     stars?: boolean;
+    /** Visual-only recipes. Coordinates are tile-space and never affect mapRaw. */
+    recipe?: ThemeVisualRecipe;
   };
+}
+
+/** Small deterministic drawing recipe for a themed map skin. The renderer only
+ * paints these shapes above the existing map; it never reads them for routing,
+ * seats, anchors, errands, or persistence. Keeping coordinates in the theme
+ * config makes a future pastoral skin a data-only addition. */
+export interface ThemeVisualRecipe {
+  floor?: ReadonlyArray<Readonly<{ x: number; y: number; width: number; height: number; color?: number; alpha?: number }>>;
+  boundaries?: ReadonlyArray<Readonly<{ x: number; y: number; width: number; height: number; color?: number; alpha?: number }>>;
+  workstations?: ReadonlyArray<Readonly<{ x: number; y: number; accent?: number; surface?: number }>>;
+  props?: ReadonlyArray<Readonly<{ x: number; y: number; kind: 'crystal' | 'console' | 'plant' | 'crate' | 'lantern' | 'pond'; accent?: number }>>;
+  windows?: ReadonlyArray<Readonly<{ x: number; y: number; width: number; height: number; fill?: number; stroke?: number; spark?: number }>>;
 }
 
 /** Per-theme cast loader — the indirection point so a future show can swap its
@@ -126,9 +147,20 @@ export interface ThemeCast {
   defaultCharacter: string;
 }
 
+function themeCast(theme: CharacterThemeId): ThemeCast {
+  return {
+    byName: CAST_BY_NAME as Record<string, CastMember>,
+    getFrames: (name: string) => getCastFrames(name as OfficeCharacterName, theme),
+    defaultCharacter: DEFAULT_CHARACTER,
+  };
+}
+
 /** The full contract a theme must supply. See report §A (theme contract). */
 export interface ThemeConfig {
   id: ThemeId;
+  /** Optional full-map visual projected over this theme's Tiled layers. The
+   * paired map remains authoritative for collision, seats and anchors. */
+  backgroundUrl?: string;
   /** Raw Tiled JSON text; parsed + tileset-patched by themeLoader. */
   mapRaw: string;
   /** Ordered atlases — order matches both the texture load order and the map's
@@ -226,16 +258,100 @@ export const OFFICE_THEME: ThemeConfig = {
   },
 };
 
-/** 星舰“蜂巢号”舰桥：same map, seats, anchors, errands and cast, with a
- * restrained procedural bridge treatment. Keeping the topology shared is what
- * makes switching lossless for every running agent and its PTY/session. */
+/** 晶海星港：same renderer, object names and runtime semantics as the office,
+ * with an art-aligned fixed-grid navigation projection. Switching stays
+ * lossless because visual reconstruction never owns Agent or PTY/session. */
 export const STARSHIP_THEME: ThemeConfig = {
   ...OFFICE_THEME,
   id: 'starship',
+  mapRaw: crystalSeaStarportMapRaw,
+  backgroundUrl: crystalSeaStarportMapUrl,
+  cast: themeCast('starship'),
   palette: {
     background: 0x050b1c,
     noteColors: { todo: 0xf3d36b, doing: 0x64d9ff, blocked: 0xff7f9e, done: 0x71e0b0 },
-    visual: { overlay: 0x071329, overlayAlpha: 0.28, grid: 0x3c7db3, accent: 0x64d9ff, stars: true },
+    visual: {
+      overlay: 0x071329, overlayAlpha: 0.2, grid: 0x3c7db3, accent: 0x64d9ff, stars: true,
+      recipe: {
+        // The map's open walkable areas read as blue alloy deck plates.
+        floor: [
+          { x: 1, y: 2, width: 34, height: 7 },
+          { x: 1, y: 10, width: 34, height: 12 },
+        ],
+        // Cyan structural ribs establish the captain's room, briefing bay,
+        // bullpen and break-room edges without changing collision geometry.
+        boundaries: [
+          { x: 0, y: 8, width: 15, height: 1 }, { x: 20, y: 8, width: 15, height: 1 },
+          { x: 8, y: 3, width: 1, height: 5 }, { x: 20, y: 3, width: 1, height: 5 },
+          { x: 25, y: 14, width: 10, height: 1 }, { x: 25, y: 14, width: 1, height: 8 },
+        ],
+        // Workstation halos align with the existing desk rows and remain
+        // decorative even if a future map changes the art beneath them.
+        workstations: [
+          { x: 2, y: 10 }, { x: 7, y: 10 }, { x: 12, y: 10 }, { x: 17, y: 10 }, { x: 22, y: 10 }, { x: 27, y: 10 },
+          { x: 2, y: 16 }, { x: 7, y: 16 }, { x: 12, y: 16 }, { x: 17, y: 16 }, { x: 22, y: 16 }, { x: 27, y: 16 },
+          { x: 28, y: 3 }, { x: 32, y: 3 },
+        ],
+        props: [
+          { x: 5, y: 5, kind: 'crystal' }, { x: 17, y: 5, kind: 'crystal', accent: 0xff8fb3 },
+          { x: 2, y: 2, kind: 'console' }, { x: 31, y: 18, kind: 'console' },
+          { x: 1, y: 21, kind: 'plant', accent: 0x4ee5d0 }, { x: 34, y: 21, kind: 'plant', accent: 0xff8fb3 },
+          { x: 29, y: 19, kind: 'crate', accent: 0xb99a70 },
+        ],
+        // Aquarium-like portholes are painted as luminous environmental
+        // windows, distinct from the interactive calendar/clock anchors.
+        windows: [{ x: 10, y: 1, width: 7, height: 2 }, { x: 20, y: 1, width: 7, height: 2 }],
+      },
+    },
+  },
+};
+
+/** 星穹田园公社：same renderer and operational object contract with a warm
+ * stone-and-timber map and its art-aligned navigation projection. */
+export const STARFIELD_FARM_THEME: ThemeConfig = {
+  ...OFFICE_THEME,
+  id: 'starfield-farm',
+  mapRaw: starfieldFarmMapRaw,
+  backgroundUrl: starfieldFarmMapUrl,
+  cast: themeCast('starfield-farm'),
+  palette: {
+    background: 0x171b2b,
+    noteColors: { todo: 0xf4d58d, doing: 0x8ed0ad, blocked: 0xf1a58c, done: 0xb8d69b },
+    visual: {
+      overlay: 0x5a402f, overlayAlpha: 0.16, grid: 0xc89b63, accent: 0xffd27e, stars: true,
+      recipe: {
+        floor: [
+          { x: 1, y: 2, width: 34, height: 7, color: 0x8b7056, alpha: 0.25 },
+          { x: 1, y: 10, width: 34, height: 12, color: 0x9a7b5e, alpha: 0.22 },
+        ],
+        boundaries: [
+          { x: 0, y: 8, width: 15, height: 1, color: 0x6f472f, alpha: 0.86 },
+          { x: 20, y: 8, width: 15, height: 1, color: 0x6f472f, alpha: 0.86 },
+          { x: 8, y: 3, width: 1, height: 5, color: 0x895937, alpha: 0.8 },
+          { x: 25, y: 14, width: 10, height: 1, color: 0x895937, alpha: 0.8 },
+        ],
+        workstations: [
+          { x: 2, y: 10, accent: 0xf6c477, surface: 0x8a5a35 }, { x: 7, y: 10, accent: 0xf6c477, surface: 0x8a5a35 },
+          { x: 12, y: 10, accent: 0xf6c477, surface: 0x8a5a35 }, { x: 17, y: 10, accent: 0xf6c477, surface: 0x8a5a35 },
+          { x: 22, y: 10, accent: 0xf6c477, surface: 0x8a5a35 }, { x: 27, y: 10, accent: 0xf6c477, surface: 0x8a5a35 },
+          { x: 2, y: 16, accent: 0xf6c477, surface: 0x8a5a35 }, { x: 7, y: 16, accent: 0xf6c477, surface: 0x8a5a35 },
+          { x: 12, y: 16, accent: 0xf6c477, surface: 0x8a5a35 }, { x: 17, y: 16, accent: 0xf6c477, surface: 0x8a5a35 },
+          { x: 22, y: 16, accent: 0xf6c477, surface: 0x8a5a35 }, { x: 27, y: 16, accent: 0xf6c477, surface: 0x8a5a35 },
+        ],
+        props: [
+          { x: 5, y: 5, kind: 'plant', accent: 0x91d27d },
+          { x: 17, y: 5, kind: 'lantern', accent: 0xffb95e },
+          { x: 2, y: 2, kind: 'lantern', accent: 0xffd27e },
+          { x: 31, y: 18, kind: 'pond', accent: 0x70c8c0 },
+          { x: 1, y: 21, kind: 'plant', accent: 0x91d27d },
+          { x: 34, y: 21, kind: 'plant', accent: 0xf0b27e },
+        ],
+        windows: [
+          { x: 10, y: 1, width: 7, height: 2, fill: 0x1d3151, stroke: 0xe6c87a, spark: 0xffe3a1 },
+          { x: 20, y: 1, width: 7, height: 2, fill: 0x1d3151, stroke: 0xe6c87a, spark: 0xffe3a1 },
+        ],
+      },
+    },
   },
 };
 
@@ -313,6 +429,7 @@ export const BROOKLYN99_THEME: ThemeConfig = {
 export const THEMES: Partial<Record<ThemeId, ThemeConfig>> = {
   office: OFFICE_THEME,
   starship: STARSHIP_THEME,
+  'starfield-farm': STARFIELD_FARM_THEME,
   brooklyn99: BROOKLYN99_THEME,
 };
 

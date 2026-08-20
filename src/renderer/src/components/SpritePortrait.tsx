@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { paintCastPortrait, type OfficeCharacterName } from '@/scene/office/cast';
 import { PORTRAIT_W, PORTRAIT_H } from '@/scene/office/portraitArt';
+import { useStore } from '@/store/store';
 
 const FRAME_W = PORTRAIT_W;
 const FRAME_H = PORTRAIT_H;
@@ -14,13 +15,17 @@ export interface SpritePortraitProps {
   background?: string;
 }
 
-/** Static standing portrait of an Office cast member (recolored LimeZu sprite). */
+/** Static portrait compiled from the same stable identity source as the floor sprite. */
 export function SpritePortrait({
   character,
   scale = 2,
   background = 'transparent'
 }: SpritePortraitProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const officeTheme = useStore((s) => s.officeTheme);
+  const characterTheme = officeTheme === 'starship' || officeTheme === 'starfield-farm'
+    ? officeTheme
+    : 'office';
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -34,9 +39,9 @@ export function SpritePortrait({
       ctx.fillStyle = background;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
-    paintCastPortrait(ctx, character, scale).catch(() => { /* asset load race */ });
+    paintCastPortrait(ctx, character, scale, characterTheme).catch(() => { /* asset load race */ });
     return () => { cancelled = true; void cancelled; };
-  }, [character, scale, background]);
+  }, [character, scale, background, characterTheme]);
 
   // A fractional scale can land on a fractional pixel count; the canvas
   // attributes are integers either way, so round once and use the same number
