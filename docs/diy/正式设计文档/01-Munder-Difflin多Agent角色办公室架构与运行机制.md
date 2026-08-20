@@ -8,13 +8,21 @@
 | --- | --- |
 | 权威范围 | 多 Agent 运行模型、角色化、消息通信、Provider 适配、Session/记忆、控制与恢复机制 |
 | 不负责 | 实施阶段、一次性验证结果、临时运行目录、真实 Session ID、密钥和排查流水 |
-| 产品决策来源 | [DIY 可行性与功能价值分析](../01-Munder-Difflin-DIY可行性与功能价值分析结论.md) |
-| 交付状态来源 | [DIY 实施规划与 Gate 总览](../02-Munder-Difflin-DIY实施规划与Gate总览.md) |
+| 产品与架构结论 | 本文第 2～4 节；Wave 6 及后续能力取舍见 [正式实施规划](../实施规划/03-Munder-Difflin-Wave-6及后续设计结论与实施规划.md) |
+| 长期运行合同 | [个人长期运行安全与备份恢复设计](02-Munder-Difflin个人长期运行安全与备份恢复设计.md) |
 | 核心实现 | [`src/main/hive.ts`](../../../src/main/hive.ts)、[`src/shared/agentProvider.ts`](../../../src/shared/agentProvider.ts)、[`src/renderer/src/hooks/useHive.ts`](../../../src/renderer/src/hooks/useHive.ts) |
 
 本文只维护稳定设计合同。动态证据属于 `.work/`，不得把 API Key、临时进程号、运行 Session ID 或某次 pass/fail 复制进本文。
 
-## 2. 一句话架构
+## 2. 产品定位与一句话架构
+
+Munder Difflin DIY 的产品定位是：
+
+> 一个本地优先、可配置不同模型、可让多个真实 CLI Agent 协作，并以像素办公室呈现状态和角色关系的中文 Agent 工作环境。
+
+产品采用独立 Fork 维护，当前边界是个人非商业自用。保留项目原有许可证与素材归属，不把商业授权、公开发行、签名、公证、应用商店和自动更新服务纳入当前合同；若用途转为公开或商业分发，必须另立许可、隐私、供应链与发布设计。
+
+核心产品决策是保留真实 PTY、Hive、像素办公室、Worktree 和 Command Center，不在 Electron 内复制 Provider 的 Agent Loop，也不为了视觉效果牺牲真实状态、可停止、可恢复和数据边界。
 
 Munder Difflin 不在 Electron 内重新实现 Agent Loop，而是把多个真实 Agent CLI 分别运行在独立 PTY 中；Electron Main 负责进程、Hive、Hook、凭据和控制，Renderer 负责可视化与安全投递，每个 Agent 则通过自己的角色目录、消息信箱和 Provider Session 获得身份、长期记忆与协作能力。
 
