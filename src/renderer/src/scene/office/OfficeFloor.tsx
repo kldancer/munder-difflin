@@ -13,6 +13,7 @@ import { pickSoloLine, pickExchange, type BreakSpot } from './cafeteriaLines';
 import { colors } from '@/design/tokens';
 import { loadTheme, resolveThemeMap, themeTilesetUrls } from './themeLoader';
 import { installContextLossRecovery } from './glRecovery';
+import { createThemeVisuals } from './themeVisuals';
 import type { Tile, Facing, ErrandKind, ErrandSpot } from './themeRegistry';
 
 // The map, tileset atlases, desk-claim order, errand spots, coffee-economy
@@ -281,6 +282,13 @@ export function OfficeFloor() {
 
       const mapRenderer = new TiledMapRenderer(resolveThemeMap(theme), tilesetTextures);
       world.addChild(mapRenderer.getContainer());
+      // Insert the procedural skin between static map layers and characters.
+      // It is visual-only: the map renderer remains the sole owner of
+      // walkability, anchors and the character container, so a theme switch
+      // cannot alter agent identity or lifecycle state.
+      const root = mapRenderer.getContainer();
+      const visuals = createThemeVisuals(theme, mapRenderer.width, mapRenderer.height, mapRenderer.tileSize);
+      root.addChildAt(visuals, Math.max(0, root.children.length - 1));
       const charLayer = mapRenderer.getCharacterContainer();
       const tileCount = mapRenderer.getContainer().children.reduce(
         (n, c) => n + ((c as Container).children?.length ?? 0), 0);

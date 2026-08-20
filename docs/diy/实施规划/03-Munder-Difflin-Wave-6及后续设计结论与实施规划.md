@@ -10,11 +10,11 @@
 | 上游正式设计 | [多 Agent 角色办公室架构与运行机制](../正式设计文档/01-Munder-Difflin多Agent角色办公室架构与运行机制.md)、[个人长期运行安全与备份恢复设计](../正式设计文档/02-Munder-Difflin个人长期运行安全与备份恢复设计.md) |
 | 不负责 | 一次性命令、耗时、真实 Session ID、API Key、临时路径、测试输出与某次运行 pass/fail |
 | 动态证据 | `.work/`；长期正文只保留当前合同和已确认的能力边界 |
-| 当前状态 | Wave 0～5 的稳定合同已进入正式设计；Wave 6 及后续工作包均为待立项，不代表已经授权实施 |
+| 当前状态 | Wave 0～6 与 G6 已完成；Wave 7 及后续仍是待立项规划，不代表已经授权实施 |
 
 ## 2. 已完成基线
 
-Wave 0～5 已把项目从“可行性判断”推进为可长期自用的中文混合 Provider 办公室。历史波次的命令和收据不再作为长期设计维护；其稳定结果收敛如下：
+Wave 0～6 已把项目从“可行性判断”推进为可长期自用、可解释且可恢复的中文混合 Provider 办公室。历史波次的命令和收据不再作为长期设计维护；其稳定结果收敛如下：
 
 | 基线 | 当前稳定结果 | 权威位置 |
 | --- | --- | --- |
@@ -40,16 +40,16 @@ Wave 0～5 已把项目从“可行性判断”推进为可长期自用的中文
 | 多 Agent / PTY / Hive | 每个 Agent 使用独立 CLI、PTY、Provider Home、角色目录和信箱；Router 负责投递 | 已具备 | 不重写内核，只提升运维可解释性 |
 | 中文化与中文角色 | UI、角色模板、回复语言和系统生成 Hive 文档已有中文合同 | 已具备 | 新页面持续复用 i18n；不翻译机器字段 |
 | Codex / Gemini / DeepSeek | 三条中文混合主链均有 Provider、生命周期和 Session 恢复合同 | 已具备 | 策略路由、降级说明和质量评估尚未统一 |
-| Session 管理 | Registry 保存最近 Session；创建 Agent 可输入 Session ID；支持重启继续和按 Provider 恢复 | 部分具备 | 缺少最近 Session 的直接发现、当前占用提示和明确恢复结果；不需要另建全量 Session 管理系统 |
+| Session 管理 | Registry 与有界 Provider 元数据提供最近 Session；Agent 详情显示当前占用、能力限制并复用真实恢复参数 | 已具备 | DeepSeek 枚举仍受 OpenCode 本地索引限制；后续只按真实 CLI 能力演进，不建设 Session 数据库 |
 | 任务与依赖 | `tasks.json`、Kanban、优先级、负责人、`dependsOn`、Blocked/Ask Me 和等待完成缝隙已存在 | 部分具备 | 任务详情还不能简洁解释“正在等谁/哪条回复”；不需要另建复杂项目管理器 |
 | Agent 通信 | Inbox/Outbox、Conversation、回复链、路由收据、空闲门控和事件日志已存在 | 已具备 | 缺少端到端消息轨迹、投递延迟分解和卡信定位界面 |
-| 记忆 | `memory.md`、语义检索、反思、Memory Graph 与本地知识库均已有实现 | 部分具备 | 缺少一个直接查看、编辑、精简 `memory.md` 的轻量入口和边界提示；不需要自动治理引擎 |
-| 观测与成本 | `fleet.json`、Activity、Token、费用账本、OTel、工具状态和断路器已存在 | 部分具备 | 现有入口信息分散，需在办公室或 Command Center 增加紧凑摘要；不新增观测平台 |
+| 记忆 | `memory.md`、语义检索、反思、Memory Graph 与本地知识库均已有实现；现有 Memory 入口支持备份优先、原子写入和冲突保护的直接编辑 | 已具备 | 后续只按真实容量问题增强显式治理；不建设自动晋升/遗忘引擎 |
+| 观测与成本 | `fleet.json`、Activity、Token、费用账本、OTel、工具状态和断路器已存在；Command Center 已增加现有事实的一屏摘要 | 已具备 | 后续只处理真实使用暴露的解释缺口；不新增观测平台或第二套事实源 |
 | Git / Worktree / IDE | 隔离 Worktree、保留未集成成果、文件树、编辑、Diff、历史和分支比较已存在 | 部分具备 | Agent 完成后还缺少清楚的“查看改动/验证/合并/保留”提示；复用现有 Git 页面即可 |
 | Voice | Groq 转录与 OpenAI Realtime Michael、语音动作和成本保护已存在 | 已具备 | 仅在真实使用频率证明价值后增强可靠性与中文体验 |
 | Knowledge Graph | 文档/图片导入、切片、标签、检索、CLI 和图谱页面已有本地实现 | 已具备 | 后续重点是来源、更新、删除、命中解释和记忆边界，不是重建图谱 |
 | 自动触发与集成 | Schedule、上下文触发、Webhook、Slack、GitHub CI 等已存在 | 部分具备 | 缺少统一执行历史、失败重试解释和长期运行 SLO |
-| 办公室主题与动画 | 已有可插拔 `ThemeConfig`、Office/Brooklyn 99 地图、角色行走/落座/咖啡/差事，以及工作、等待、阻塞、压缩、循环、成功等真实状态动画；Brooklyn 99 仍复用占位美术，其余四个主题只有入口 | 部分具备 | 提升为 Wave 6 高优先级：先消除破坏性切换和假可用入口，再用现有运行信号增强角色辨识与状态可读性；不新建动画业务状态机 |
+| 办公室主题与动画 | 默认办公室与原创星舰“蜂巢号”皮肤共享地图拓扑、座位、锚点和状态语义，可一步无损双向切换；隐藏或全屏时暂停场景绘制 | 已具备 | 其它创意皮肤仍按真实价值择一实施；不恢复假可用入口或破坏性切换，不新建动画业务状态机 |
 | 更多 Provider | 已有多种 Provider 预设，能力成熟度不等价 | 部分具备 | 先建立准入矩阵，再决定是否新增或升级黄金主链 |
 
 主要实现证据入口：[`agentProvider.ts`](../../../src/shared/agentProvider.ts)、[`hive.ts`](../../../src/main/hive.ts)、[`TasksKanban.tsx`](../../../src/renderer/src/components/TasksKanban.tsx)、[`CommandCenterPanel.tsx`](../../../src/renderer/src/components/CommandCenterPanel.tsx)、[`git.ts`](../../../src/main/git.ts)、[`IdePanel.tsx`](../../../src/renderer/src/ide/IdePanel.tsx)、[`memory.ts`](../../../src/main/memory.ts)、[`telemetry.ts`](../../../src/main/telemetry.ts)。
@@ -139,13 +139,13 @@ flowchart LR
 ```mermaid
 flowchart TD
     Base(["✅ G5\n个人长期运行基线"])
-    M0["🔧 M0 维护前置\n依赖兼容与风险归类"]
-    W60["📏 W6.0 真实使用基线\n现有事实的重复检查"]
-    W61["🎭 W6.1 主题与角色动画\n无损切换 · 真实状态表演"]
-    W62["🗺️ W6.2 轻量运营总览\n现有事实的一屏摘要"]
-    W63["🎫 W6.3 Session 快速恢复\n最近记录 · 占用提示"]
-    W64["🧠 W6.4 记忆轻治理\n查看 · 编辑 · 精简"]
-    G6{"🚦 G6\n可解释可恢复"}
+    M0["✅ M0 维护前置\n依赖兼容与风险归类"]
+    W60["✅ W6.0 真实使用基线\n现有事实的重复检查"]
+    W61["✅ W6.1 主题与角色动画\n无损切换 · 真实状态表演"]
+    W62["✅ W6.2 轻量运营总览\n现有事实的一屏摘要"]
+    W63["✅ W6.3 Session 快速恢复\n最近记录 · 占用提示"]
+    W64["✅ W6.4 记忆轻治理\n查看 · 编辑 · 精简"]
+    G6{"✅ G6\n可解释可恢复"}
     W71["🧵 W7.1 依赖与通信说明\n在任务详情中展开"]
     W72["🚚 W7.2 Worktree 交付 Gate"]
     W73["🧹 W7.3 生命周期与容量治理"]
@@ -183,15 +183,16 @@ flowchart TD
     classDef maint fill:#fff4cf,stroke:#b7791f,color:#5f3d00,stroke-width:2px;
     classDef wave fill:#dcecff,stroke:#2d67a8,color:#12365f,stroke-width:2px;
     classDef choice fill:#efe7ff,stroke:#7652a6,color:#321d52,stroke-width:2px;
-    class Base done;
-    class M0 maint;
-    class W60,W61,W62,W63,W64,W71,W72,W73,W81,W82,W83 wave;
-    class G6,G7,G8,Decide choice;
+    class Base,M0,W60,W61,W62,W63,W64,G6 done;
+    class W71,W72,W73,W81,W82,W83 wave;
+    class G7,G8,Decide choice;
 ```
 
 `M0` 是进入 Wave 6 前的维护车道，不是产品功能。现有只读依赖审计仍有跨大版本风险项，必须按运行依赖、开发/打包依赖和未启用可选入口分类；不得使用强制自动升级替代兼容验证。
 
-## 7. Wave 6：可解释、可恢复的日常运营
+## 7. Wave 6：可解释、可恢复的日常运营（已完成）
+
+Wave 6 以最小增量进入现有入口：日常检查是只读聚合脚本，主题是 Renderer 视觉投影，运营摘要来自现有 Store，Session 只做有界元数据发现，记忆编辑复用 `memory.md`。没有新增守护进程、Session/记忆数据库、远程主题包或第二套事实源。动态结论以 `.work/gates/G6.jsonl` 为准。
 
 ### 7.1 工作包
 
@@ -334,6 +335,8 @@ sequenceDiagram
 - 动画遮挡阻塞、循环、等待人工等高优先级状态，或无法遵循系统减少动态效果偏好。
 
 ### 7.3 G6 完成条件
+
+> 当前结论：G6 已通过。以下条件作为后续回归合同继续保留。
 
 G6 只有同时满足以下事实才可通过：
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PixelPanel } from './PixelPanel';
 import { PixelBadge } from './PixelBadge';
@@ -17,6 +17,15 @@ import { GitTab } from './GitTab';
 import { Icon } from './Icon';
 import { useStore, type Agent } from '@/store/store';
 import { usePtyParser } from '@/hooks/usePtyParser';
+import { inferAgentProvider } from '@/store/config';
+
+function commandParts(command: string): string[] {
+  const parts: string[] = [];
+  const re = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^']*)'|([^\s]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(command)) !== null) parts.push(match[1] ?? match[2] ?? match[3]);
+  return parts;
+}
 
 export interface AgentDetailPanelProps {
   agent: Agent;
@@ -26,6 +35,11 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
   const { t } = useTranslation();
   const [openTerminalState, setOpenTerminalState] = useState<'idle' | 'opening' | 'ok' | 'error'>('idle');
   const [openTerminalError, setOpenTerminalError] = useState<string | undefined>();
+  const [recentSessions, setRecentSessions] = useState<Awaited<ReturnType<typeof window.cth.listRecentSessions>>>([]);
+  const [selectedSession, setSelectedSession] = useState('');
+  const [sessionMessage, setSessionMessage] = useState<string | null>(null);
+  const [sessionOutcome, setSessionOutcome] = useState<'idle' | 'success' | 'error'>('idle');
+  const [resumingSession, setResumingSession] = useState(false);
   const archiveAgent = useStore(s => s.archiveAgent);
   const updateAgent = useStore(s => s.updateAgent);
   const setFullscreen = useStore(s => s.setFullscreen);
@@ -41,6 +55,72 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
   const isFullscreenedHere = fullscreenAgentId === agent.id;
 
   const onPtyStream = usePtyParser(agent.id);
+
+  useEffect(() => {
+    let alive = true;
+    window.cth.listRecentSessions(40).then((rows) => {
+      if (!alive) return;
+      const provider = inferAgentProvider(agent.command, agent.provider);
+      const compatible = rows.filter((row) =>
+        row.resumable && row.provider === provider &&
+        (row.agentId === agent.id || (row.agentId == null && row.cwd === agent.cwd))
+      );
+      setRecentSessions(compatible);
+      setSelectedSession(compatible[0]?.id ?? '');
+    }).catch(() => { if (alive) setRecentSessions([]); });
+    return () => { alive = false; };
+  }, [agent.id, agent.cwd, agent.provider, agent.command]);
+
+  const resumeSelectedSession = async () => {
+    const sid = selectedSession.trim();
+    if (!sid || !agent.command) return;
+    setResumingSession(true);
+    setSessionMessage(null);
+    setSessionOutcome('idle');
+    const ptyId = agent.ptyId ?? `pty-${agent.id}`;
+    try {
+      const selected = recentSessions.find((session) => session.id === sid);
+      const provider = inferAgentProvider(agent.command, agent.provider);
+      if (!selected || !selected.resumable || selected.provider !== provider) {
+        throw new Error(t('w6.session.incompatible'));
+      }
+      const parts = commandParts(agent.command);
+      const [command, ...args] = parts;
+      if (!command) throw new Error(t('w6.session.noCommand'));
+      if (agent.ptyId) {
+        if (!window.confirm(t('w6.session.replaceConfirm', { name: agent.name }))) {
+          setResumingSession(false);
+          return;
+        }
+        const killed = await window.cth.killPty(agent.ptyId);
+        if (!killed.ok && !/^no pty:/.test(killed.error ?? '')) {
+          throw new Error(killed.error ?? t('w6.session.stopFailed'));
+        }
+        disposeTerminal(agent.ptyId);
+      }
+      const result = await window.cth.spawnPty({
+        id: ptyId, cwd: agent.cwd, command, args, provider, cols: 100, rows: 30,
+        resume: true, resumeSessionId: sid, requireResume: true, isolate: false,
+        hive: {
+          id: agent.id, name: agent.name, cwd: agent.cwd, provider,
+          role: agent.description, isGod: agent.isGod, isAssistant: agent.isAssistant,
+          replyLanguage: agent.replyLanguage
+        }
+      });
+      if (!result.ok) throw new Error(result.error ?? t('w6.session.resumeFailed'));
+      updateAgent(agent.id, {
+        ptyId, terminalGeneration: (agent.terminalGeneration ?? 0) + 1,
+        status: 'idle', action: t('w6.session.action', { id: sid.slice(0, 12) })
+      });
+      setSessionOutcome('success');
+      setSessionMessage(t('w6.session.resumed', { id: sid.slice(0, 12) }));
+    } catch (error) {
+      setSessionOutcome('error');
+      setSessionMessage(t('w6.session.failed', { error: error instanceof Error ? error.message : String(error) }));
+    } finally {
+      setResumingSession(false);
+    }
+  };
 
   // Michael gets the full command-center dashboard instead of the plain panel.
   if (agent.isGod) return <CommandCenterPanel agent={agent} />;
@@ -147,6 +227,33 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
         }}>{openTerminalError}</div>
       )}
+
+      {recentSessions.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderBottom: '1px solid var(--cth-ink-300)', background: 'var(--cth-paper-100)' }}>
+          <span style={{ fontSize: 11, color: 'var(--cth-ink-600)', whiteSpace: 'nowrap' }}>{t('w6.session.recent')}</span>
+          <select value={selectedSession} onChange={(e) => setSelectedSession(e.target.value)} disabled={resumingSession} style={{ minWidth: 0, flex: 1, fontSize: 11 }}>
+            {recentSessions.map((session) => (
+              <option key={`${session.provider}:${session.id}`} value={session.id}>
+                {session.agentName ?? agent.name} · {session.provider} · {session.id.slice(0, 16)}
+              </option>
+            ))}
+          </select>
+          <PixelButton variant="secondary" size="sm" onClick={() => void resumeSelectedSession()} disabled={resumingSession || !selectedSession}>
+            {resumingSession ? t('w6.session.resuming') : t('w6.session.resume')}
+          </PixelButton>
+        </div>
+      )}
+      {recentSessions.length > 0 && agent.ptyId && (
+        <div style={{ fontSize: 11, padding: '3px 8px', color: 'var(--cth-ink-500)' }}>
+          {t('w6.session.occupied')}
+        </div>
+      )}
+      {recentSessions.find((session) => session.id === selectedSession)?.limitation && (
+        <div style={{ fontSize: 11, padding: '3px 8px', color: 'var(--cth-ink-500)' }}>
+          {recentSessions.find((session) => session.id === selectedSession)?.limitation}
+        </div>
+      )}
+      {sessionMessage && <div style={{ fontSize: 11, padding: '3px 8px', color: sessionOutcome === 'error' ? 'var(--cth-coral)' : 'var(--cth-ink-700)' }}>{sessionMessage}</div>}
 
       {/* #7C — operator control (pause / halt / steer) for live agents */}
       {isReal && <AgentControlStrip agentId={agent.id} />}

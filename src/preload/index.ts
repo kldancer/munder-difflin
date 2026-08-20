@@ -102,6 +102,18 @@ export interface HiveRegistry {
   }>;
 }
 
+export interface RecentSession {
+  id: string;
+  provider: string;
+  agentId: string | null;
+  agentName: string | null;
+  cwd: string | null;
+  updatedAt: number;
+  source: 'registry' | 'claude' | 'codex' | 'gemini' | 'deepseek';
+  resumable: boolean;
+  limitation?: string;
+}
+
 /** One row of the consolidated voice read-layer directory (`hive:agentDirectory`):
  *  everything the office-floor sidebar + telemetry know for an agent, joined into
  *  one PII-free record. Includes archived agents. */
@@ -322,8 +334,8 @@ export interface HarnessConfig {
   terminalTheme?: 'light' | 'dark';
   /** TV-show office themes feature flag (Settings picker + switch flow). Default OFF. */
   tvShowOffices?: boolean;
-  /** Active office map/cast theme (honored only when tvShowOffices is on). */
-  officeTheme?: 'office' | 'friends' | 'brooklyn99' | 'siliconvalley' | 'got' | 'hogwarts';
+  /** Active built-in office visual theme. */
+  officeTheme?: 'office' | 'starship' | 'friends' | 'brooklyn99' | 'siliconvalley' | 'got' | 'hogwarts';
   /** Per-CLI-provider local/self-hosted base URL (Ollama/LM Studio/vLLM, …) for the
    *  OpenCode/Crush/pi/qwen engines; applied at spawn. API KEYS are NOT stored here —
    *  they live write-only in the secret broker. */
@@ -592,6 +604,8 @@ const api = {
    *  resume auto-fill), or null if the id is invalid/unknown. */
   resolveSessionCwd: (sessionId: string): Promise<string | null> =>
     ipcRenderer.invoke('session:resolveCwd', sessionId),
+  listRecentSessions: (limit = 24): Promise<RecentSession[]> =>
+    ipcRenderer.invoke('session:listRecent', limit),
   onPtyData: (id: string, cb: (data: string) => void): (() => void) => {
     const channel = `pty:data:${id}`;
     const listener = (_e: IpcRendererEvent, data: string) => cb(data);
@@ -734,6 +748,8 @@ const api = {
   hiveTasks: (): Promise<unknown> => ipcRenderer.invoke('hive:tasks'),
   hiveLog: (n?: number): Promise<unknown[]> => ipcRenderer.invoke('hive:log', n ?? 200),
   hiveMemory: (id: string): Promise<string> => ipcRenderer.invoke('hive:memory', id),
+  hiveReplaceMemory: (id: string, content: string, expected: string): Promise<{ ok: boolean; error?: string; bytes?: number }> =>
+    ipcRenderer.invoke('hive:replaceMemory', id, content, expected),
   hiveInbox: (id: string): Promise<HiveMessage[]> => ipcRenderer.invoke('hive:inbox', id),
   /** Voice read-layer: recent message CONTENT (inbox/outbox bodies), REDACTED in
    *  main. Pass { id } for one message, { agentId } to scope to one mailbox, or

@@ -34,6 +34,7 @@ import {
   type AgentProvider
 } from '@/store/config';
 import { canReceiveInbox } from '@shared/agentProvider';
+import { summarizeFleet } from './fleetStatusSummary';
 
 /** Michael's control surface. Shown instead of the plain terminal/files panel
  *  when the god agent is selected: terminal + queue, the floor roster (with
@@ -605,9 +606,57 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
     sumRate += rate[a.id] ?? 0;
   }
   const fleetCachePct = sumInput > 0 ? Math.round((sumCacheRead / sumInput) * 100) : 0;
+  const fleetStatus = summarizeFleet(agents.map((a) => ({
+    id: a.id,
+    name: a.name,
+    provider: inferAgentProvider(a.command, a.provider),
+    status: a.status,
+    hasLivePty: !!a.ptyId,
+    action: a.action,
+    activityAt: a.recentTextTs
+  })));
 
   return (
     <Scroll>
+      <Section title={tr('w6.status.title')}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {[
+            [tr('w6.status.total'), fleetStatus.total, 'var(--cth-ink-700)'],
+            [tr('w6.status.live'), fleetStatus.live, 'var(--cth-mint)'],
+            [tr('w6.status.working'), fleetStatus.working, 'var(--cth-lemon)'],
+            [tr('w6.status.waiting'), fleetStatus.waiting, 'var(--cth-status-waiting)'],
+            [tr('w6.status.blocked'), fleetStatus.blocked, 'var(--cth-coral)']
+          ].map(([label, value, color]) => (
+            <span key={String(label)} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '3px 7px', background: 'var(--cth-paper-100)',
+              boxShadow: `inset 0 0 0 1px ${String(color)}`,
+              fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-ink-900)'
+            }}>
+              <strong>{String(value)}</strong> {String(label)}
+            </span>
+          ))}
+        </div>
+        <div style={{ marginTop: 7, fontSize: 11, color: 'var(--cth-ink-700)' }}>
+          <strong>{tr('w6.status.providers')}：</strong>{' '}
+          {fleetStatus.providers.map(({ provider, count }) => (
+            <span key={provider} style={{ marginRight: 8 }}>
+              {providerPreset(provider as AgentProvider).label} × {count}
+            </span>
+          ))}
+        </div>
+        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--cth-ink-700)' }}>
+          <strong>{tr('w6.status.recent')}：</strong>{' '}
+          {fleetStatus.recent.length === 0
+            ? tr('w6.status.noRecent')
+            : fleetStatus.recent.map((item, index) => (
+                <span key={item.id}>
+                  {index > 0 ? ' · ' : ''}{item.name} — {item.action}
+                </span>
+              ))}
+        </div>
+      </Section>
+
       <Section title={tr('commandCenter.dispatch')}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
           <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, color: 'var(--cth-ink-500)', flexShrink: 0 }}>
@@ -1022,12 +1071,18 @@ function ArchivedSection() {
 
 function MemoryTab({ godId, who: controlledWho, onWho }: { godId: string; who?: string; onWho?: (id: string) => void }) {
   const { t: tr } = useTranslation();
-  const agents = useStore((s) => s.agents);
+  const activeAgents = useStore((s) => s.agents);
+  const archivedAgents = useStore((s) => s.archivedAgents);
+  const agents = [...activeAgents, ...archivedAgents.filter((a) => !activeAgents.some((live) => live.id === a.id))];
   // Selection is controllable from the graph tab; falls back to local state.
   const [internalWho, setInternalWho] = useState<string>(godId);
   const who = controlledWho ?? internalWho;
   const setWho = onWho ?? setInternalWho;
   const [mem, setMem] = useState('');
+  const [memoryDraft, setMemoryDraft] = useState('');
+  const [editingMemory, setEditingMemory] = useState(false);
+  const [memorySaveState, setMemorySaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [memorySaveMessage, setMemorySaveMessage] = useState('');
   const [query, setQuery] = useState('');
   const [searchOut, setSearchOut] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1038,8 +1093,37 @@ function MemoryTab({ godId, who: controlledWho, onWho }: { godId: string; who?: 
   const [textBusy, setTextBusy] = useState(false);
 
   useEffect(() => {
-    window.cth.hiveMemory(who).then(setMem).catch(() => setMem(''));
+    let alive = true;
+    window.cth.hiveMemory(who).then((text) => {
+      if (!alive) return;
+      setMem(text);
+      setMemoryDraft(text);
+      setEditingMemory(false);
+      setMemorySaveState('idle');
+      setMemorySaveMessage('');
+    }).catch(() => {
+      if (!alive) return;
+      setMem('');
+      setMemoryDraft('');
+    });
+    return () => { alive = false; };
   }, [who]);
+
+  const saveMemory = async () => {
+    if (memoryDraft === mem) { setEditingMemory(false); return; }
+    setMemorySaveState('saving');
+    setMemorySaveMessage('');
+    const result = await window.cth.hiveReplaceMemory(who, memoryDraft, mem);
+    if (result.ok) {
+      setMem(memoryDraft);
+      setEditingMemory(false);
+      setMemorySaveState('saved');
+      setMemorySaveMessage(tr('w6.memory.saved', { bytes: result.bytes ?? new TextEncoder().encode(memoryDraft).length }));
+    } else {
+      setMemorySaveState('error');
+      setMemorySaveMessage(tr('w6.memory.conflict', { error: result.error ?? '?' }));
+    }
+  };
 
   const search = async () => {
     if (!query.trim()) return;
@@ -1105,10 +1189,54 @@ function MemoryTab({ godId, who: controlledWho, onWho }: { godId: string; who?: 
       </Section>
 
       <Section title={tr('commandCenter.memoryFile')}>
-        <Select value={who} onChange={setWho}>
-          {agents.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
-        </Select>
-        <Pre>{mem || tr('commandCenter.noMemory')}</Pre>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Select value={who} onChange={setWho}>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>{a.name}{a.archived ? ' · archived' : ''}</option>
+            ))}
+          </Select>
+          <span style={{ flex: 1 }} />
+          {editingMemory ? <>
+            <PixelButton variant="ghost" size="sm" disabled={memorySaveState === 'saving'} onClick={() => {
+              setMemoryDraft(mem);
+              setEditingMemory(false);
+              setMemorySaveState('idle');
+              setMemorySaveMessage('');
+            }}>{tr('w6.memory.cancel')}</PixelButton>
+            <PixelButton variant="primary" size="sm" disabled={memorySaveState === 'saving'} onClick={() => { void saveMemory(); }}>
+              {memorySaveState === 'saving' ? tr('w6.memory.saving') : tr('w6.memory.save')}
+            </PixelButton>
+          </> : (
+            <PixelButton variant="secondary" size="sm" onClick={() => {
+              setMemoryDraft(mem);
+              setEditingMemory(true);
+              setMemorySaveState('idle');
+              setMemorySaveMessage('');
+            }}>{tr('w6.memory.edit')}</PixelButton>
+          )}
+        </div>
+        {editingMemory ? (
+          <>
+            <textarea
+              value={memoryDraft}
+              onChange={(event) => setMemoryDraft(event.target.value)}
+              spellCheck={false}
+              style={{
+                ...textareaStyle, marginTop: 7, minHeight: 260, resize: 'vertical',
+                fontFamily: 'var(--cth-font-mono)', fontSize: 12, lineHeight: 1.45
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+              <Muted>{tr('w6.memory.hint')}</Muted>
+              <Muted>{tr('w6.memory.size', { bytes: new TextEncoder().encode(memoryDraft).length })}</Muted>
+            </div>
+          </>
+        ) : <Pre>{mem || tr('commandCenter.noMemory')}</Pre>}
+        {memorySaveMessage && (
+          <div style={{ marginTop: 5, fontSize: 11, color: memorySaveState === 'error' ? 'var(--cth-coral)' : 'var(--cth-ink-700)' }}>
+            {memorySaveMessage}
+          </div>
+        )}
       </Section>
     </Scroll>
   );

@@ -3,6 +3,7 @@ import { w1_2_en, w1_2_zh } from './resources/w1_2';
 import { w1_3_en, w1_3_zh } from './resources/w1_3';
 import { w1_4_en, w1_4_zh } from './resources/w1_4';
 import { w1_5_en, w1_5_zh } from './resources/w1_5';
+import { w6_en, w6_zh } from './resources/w6';
 
 type ResourceTree = Record<string, unknown>;
 
@@ -40,12 +41,12 @@ const commonZh = {
 export const translationResources = {
   'en-US': {
     translation: mergeResources(
-      { common: commonEn }, w1_1_en, w1_2_en, w1_3_en, w1_4_en, w1_5_en
+      { common: commonEn }, w1_1_en, w1_2_en, w1_3_en, w1_4_en, w1_5_en, w6_en
     )
   },
   'zh-CN': {
     translation: mergeResources(
-      { common: commonZh }, w1_1_zh, w1_2_zh, w1_3_zh, w1_4_zh, w1_5_zh
+      { common: commonZh }, w1_1_zh, w1_2_zh, w1_3_zh, w1_4_zh, w1_5_zh, w6_zh
     )
   }
 };

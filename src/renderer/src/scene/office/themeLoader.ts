@@ -9,8 +9,7 @@
 
 import type { TiledMap } from './TiledMapRenderer';
 import {
-  getTheme,
-  OFFICE_THEME,
+  THEMES,
   type ThemeConfig,
   type ThemeId,
 } from './themeRegistry';
@@ -52,14 +51,14 @@ function isThemeRenderable(theme: ThemeConfig): boolean {
   }
 }
 
-/** Resolve a theme id to a renderable ThemeConfig. Async by design (later
- *  phases may fetch a show bundle here); falls back to the office theme if the
- *  requested theme is missing or its map won't parse. */
+/** Resolve a theme id to a renderable ThemeConfig. A caller must handle a
+ * failed target explicitly; returning OFFICE_THEME here used to make an
+ * unavailable skin look as if it had applied successfully. */
 export async function loadTheme(id: ThemeId): Promise<ThemeConfig> {
-  const theme = getTheme(id);
+  const theme = THEMES[id];
+  if (!theme) throw new Error(`Theme '${id}' is not available`);
   if (!isThemeRenderable(theme)) {
-    console.warn(`[themeLoader] theme '${id}' is not renderable — falling back to 'office'`);
-    return OFFICE_THEME;
+    throw new Error(`Theme '${id}' is not renderable`);
   }
   return theme;
 }

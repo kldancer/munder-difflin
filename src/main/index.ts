@@ -90,6 +90,7 @@ import {
   findCodexHomeForSession,
   withCodexResumeArgs
 } from '../shared/codexLifecycle';
+import { listRecentSessions } from './sessionCatalog';
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
 
@@ -2766,6 +2767,14 @@ ipcMain.handle('pty:list', () => ptyManager.list());
 // the cwd from a transcript record; null when the id is invalid/unknown.
 ipcMain.handle('session:resolveCwd', (_evt, sessionId: unknown) =>
   (typeof sessionId === 'string' ? resolveSessionCwd(sessionId) : null));
+ipcMain.handle('session:listRecent', (_evt, limit: unknown) => {
+  const rows = listRecentSessions({
+    harnessHome: readConfig().harnessHome ?? undefined,
+    agents: hive.registry().agents,
+    limit: typeof limit === 'number' ? limit : 24
+  });
+  return rows.map((row) => row.cwd === null ? { ...row, cwd: undefined } : row);
+});
 
 // ─── IPC: clipboard ─────────────────────────────────────────────────────────
 ipcMain.handle('app:copyToClipboard', (_evt, text: unknown) => {
@@ -3122,6 +3131,12 @@ ipcMain.handle('hive:board', () => hive.board());
 ipcMain.handle('hive:tasks', () => hive.tasks());
 ipcMain.handle('hive:log', (_evt, n: unknown) => hive.logTail(typeof n === 'number' ? n : 200));
 ipcMain.handle('hive:memory', (_evt, id: unknown) => (typeof id === 'string' ? hive.memory(id) : ''));
+ipcMain.handle('hive:replaceMemory', (_evt, id: unknown, content: unknown, expected: unknown) => {
+  if (typeof id !== 'string' || typeof content !== 'string' || typeof expected !== 'string') {
+    return { ok: false, error: 'invalid memory edit' };
+  }
+  return hive.replaceMemory(id, content, expected);
+});
 ipcMain.handle('hive:inbox', (_evt, id: unknown) => (typeof id === 'string' ? hive.inbox(id) : []));
 // Voice read-layer: recent message CONTENT (inbox/outbox bodies), REDACTED
 // main-side by hive.voiceMessages(). The renderer/voice layer never sees a raw

@@ -29,10 +29,11 @@ import interiorsUrl from '@/assets/tilesets/interiors.png?url';
 import officeMapRaw from '@/assets/maps/office.tmj?raw';
 import brooklyn99MapRaw from '@/assets/maps/brooklyn99.tmj?raw';
 
-/** Theme identifiers. Only `office` exists in Phase 0; the five TV-show themes
- *  (friends, brooklyn99, siliconvalley, got, hogwarts) land in later phases. */
+/** Theme identifiers. W6 adds a visual-only starship skin over the same office
+ *  topology; the remaining show ids stay reserved until their assets exist. */
 export type ThemeId =
   | 'office'
+  | 'starship'
   | 'friends'
   | 'brooklyn99'
   | 'siliconvalley'
@@ -107,6 +108,14 @@ export interface AnchorConfig {
 export interface PaletteConfig {
   background: number;
   noteColors: Record<string, number>;
+  /** Small, procedural skin treatment. It never changes map geometry or state. */
+  visual?: {
+    overlay: number;
+    overlayAlpha: number;
+    grid: number;
+    accent: number;
+    stars?: boolean;
+  };
 }
 
 /** Per-theme cast loader — the indirection point so a future show can swap its
@@ -208,11 +217,25 @@ export const OFFICE_THEME: ThemeConfig = {
   palette: {
     background: colors.ink[900],
     noteColors: { todo: 0xf2df8a, doing: 0x9ecbf0, blocked: 0xf0a3a3, done: 0xa8e0b0 },
+    visual: { overlay: 0x071329, overlayAlpha: 0, grid: 0xffffff, accent: 0xf2df8a },
   },
   cast: {
     byName: CAST_BY_NAME as Record<string, CastMember>,
     getFrames: (name: string) => getCastFrames(name as OfficeCharacterName),
     defaultCharacter: DEFAULT_CHARACTER,
+  },
+};
+
+/** 星舰“蜂巢号”舰桥：same map, seats, anchors, errands and cast, with a
+ * restrained procedural bridge treatment. Keeping the topology shared is what
+ * makes switching lossless for every running agent and its PTY/session. */
+export const STARSHIP_THEME: ThemeConfig = {
+  ...OFFICE_THEME,
+  id: 'starship',
+  palette: {
+    background: 0x050b1c,
+    noteColors: { todo: 0xf3d36b, doing: 0x64d9ff, blocked: 0xff7f9e, done: 0x71e0b0 },
+    visual: { overlay: 0x071329, overlayAlpha: 0.28, grid: 0x3c7db3, accent: 0x64d9ff, stars: true },
   },
 };
 
@@ -289,6 +312,7 @@ export const BROOKLYN99_THEME: ThemeConfig = {
  *  here as their content lands (Phase 2). */
 export const THEMES: Partial<Record<ThemeId, ThemeConfig>> = {
   office: OFFICE_THEME,
+  starship: STARSHIP_THEME,
   brooklyn99: BROOKLYN99_THEME,
 };
 

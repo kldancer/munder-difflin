@@ -1498,6 +1498,57 @@ export class HiveManager {
     const p = join(this.agentDir(id), 'memory.md');
     return existsSync(p) ? readFileSync(p, 'utf8') : '';
   }
+  /** Replace one registered agent's memory with optimistic concurrency.
+   * Human edits are infrequent, so a backup-first atomic swap is simpler and
+   * safer than introducing a memory database or background synchronization. */
+  replaceMemory(
+    id: string,
+    content: string,
+    expected: string
+  ): { ok: boolean; error?: string; bytes?: number } {
+    const root = this.root();
+    if (!root) return { ok: false, error: 'hive disabled (no harnessHome)' };
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id)) {
+      return { ok: false, error: 'invalid agent id' };
+    }
+    if (typeof content !== 'string' || typeof expected !== 'string') {
+      return { ok: false, error: 'invalid memory content' };
+    }
+    if (content.includes('\0')) return { ok: false, error: 'memory contains a NUL byte' };
+    const bytes = Buffer.byteLength(content, 'utf8');
+    if (bytes > 262_144) return { ok: false, error: 'memory exceeds the 256 KiB edit limit' };
+
+    const registered = this.registry().agents[id];
+    if (!registered) return { ok: false, error: 'unknown agent' };
+    const memory = join(this.agentDir(id), 'memory.md');
+    if (!existsSync(memory)) return { ok: false, error: 'memory file not found' };
+
+    let current: string;
+    try { current = readFileSync(memory, 'utf8'); }
+    catch { return { ok: false, error: 'memory file could not be read' }; }
+    if (current !== expected) {
+      return { ok: false, error: 'memory changed since it was opened; reload before saving' };
+    }
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backup = join(root, 'backups', `manual-${stamp}`, id, 'memory.md');
+    const tmp = `${memory}.tmp-${shortRand()}`;
+    try {
+      mkdirSync(dirname(backup), { recursive: true });
+      copyFileSync(memory, backup);
+      writeFileSync(tmp, content, 'utf8');
+      renameSync(tmp, memory);
+    } catch (error) {
+      try { if (existsSync(tmp)) rmSync(tmp); } catch { /* noop */ }
+      return { ok: false, error: `memory save failed: ${String(error)}` };
+    }
+    this.appendLog({
+      kind: 'memory_edit', agentId: id,
+      oldBytes: Buffer.byteLength(current, 'utf8'), newBytes: bytes
+    });
+    this.commit(`hive: memory edit ${id}`);
+    return { ok: true, bytes };
+  }
   /** Whether an agent has recorded NON-TRIVIAL memory — i.e. has appended real
    *  notes beyond the boilerplate header ensureAgent seeds. Lets the voice
    *  read-layer answer "what has the team remembered" and enumerate who has
