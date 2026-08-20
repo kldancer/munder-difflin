@@ -129,6 +129,9 @@ const RATE_LIMIT = 120;
  *  instead of everyone's. Strictly below the global cap, or it would never bind. */
 const PER_ENDPOINT_RATE_LIMIT = 60;
 const RATE_WINDOW_MS = 60_000;
+/** Tunnel clients forward into this listener. Binding all interfaces would also
+ * expose the unauthenticated TCP surface to the local LAN, which is unnecessary. */
+export const EXTERNAL_BIND_HOST = '127.0.0.1';
 
 /** Bare `POST /` keeps serving the endpoint the pre-multi-endpoint migration
  *  parked under this id, so a caller already pointed at the old URL is unaffected. */
@@ -241,7 +244,7 @@ export class WebhookServer {
       const server = createServer((req, res) => this.handleRequest(req, res));
       const onError = (e: Error): void => reject(e);
       server.once('error', onError);
-      server.listen(this.port, () => {
+      server.listen(this.port, EXTERNAL_BIND_HOST, () => {
         server.off('error', onError);
         this.server = server;
         resolve();
@@ -414,16 +417,11 @@ function parseSchema(schema: string): unknown {
   try { return JSON.parse(schema); } catch { return undefined; }
 }
 
-/** Pull the capability token from the `x-md-webhook-token` header, falling back
- *  to a `?token=` query param. Header is preferred (kept out of URL/access logs). */
+/** Pull the capability token only from a header. Query parameters are excluded:
+ * URLs routinely reach access logs, browser history and copied diagnostics. */
 function readToken(req: IncomingMessage): string {
   const h = req.headers['x-md-webhook-token'];
   if (typeof h === 'string' && h.trim()) return h.trim();
-  try {
-    const url = new URL(req.url ?? '', 'http://localhost');
-    const q = url.searchParams.get('token');
-    if (q && q.trim()) return q.trim();
-  } catch { /* malformed url → no token */ }
   return '';
 }
 

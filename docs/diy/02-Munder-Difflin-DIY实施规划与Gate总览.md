@@ -374,11 +374,11 @@ Wave 5 不以商业产品发布为目标。不实施商业素材授权、签名�
 
 | ID | 状态 | Gate 重点 | 完成边界 |
 | --- | --- | --- | --- |
-| `W5.1` | 待开始 | Node/Electron/原生模块、lockfile、依赖漏洞和升级兼容 | 安全扫描与升级需单独授权；不能以 `audit fix --force` 试错 |
-| `W5.2` | 待开始 | Slack、Webhook、Tunnel 按个人实际需求显式启用；未使用时默认关闭且不阻塞 Gate | 启用时才验收监听地址、鉴权、限流、body cap、轮换、replay 和关闭清理；Token 不进 URL/日志/收据 |
-| `W5.3` | 待开始 | Skills 来源、提交/哈希、版本、安装确认、项目级覆盖、撤销和缓存失效 | 不隐式执行远程脚本；远程不可用不静默换源；不做商业授权审计 |
-| `W5.4` | 待开始 | 本地配置、Hive/任务/知识库、Agent Home 和项目 Worktree 的备份、迁移、恢复与版本回退手册 | 不备份 API Key 明文；不自动删除 Worktree/会话；不建公开发行、签名、公证或上架链路 |
-| `G5` | 待开始 | 个人长期运行 Gate | 中文混合 Provider 主链、安全默认值、已启用的外部入口、Skills 可撤销性以及一次脱敏备份/恢复演练同时闭合 |
+| `W5.1` | 已闭合 | Node 22/lockfile v3、Electron 32 ABI 128、SQLite/PTY 原生模块和依赖树已验证；移除未使用的 `localtunnel` | 只读审计仍有 28 项：4 moderate、23 high、1 critical，集中在 Electron/构建工具跨大版本升级链；未运行 `audit fix --force`，升级兼容作为独立维护 Lane |
+| `W5.2` | 已通过 | Slack、Webhook、Tunnel 默认关闭；启用时本地目标仅监听 `127.0.0.1`，Slack 补入口限流，Webhook Token 仅接受 Header | HMAC/独立 Secret、限流、1 MiB body cap、轮换、replay 和停止合同由维护测试保护；未为 Gate 启用真实公网入口 |
+| `W5.3` | 已通过 | Skills 安装前二次确认，Git ref 固定到 commit，内容 SHA-256 和来源随目录记录，项目覆盖、刷新与卸载合同保留 | 临时目录原子安装；不运行远程脚本、不静默换源；来源不可用时明确失败或标记 stale 缓存 |
+| `W5.4` | 已通过 | 脱敏目录快照、逐文件 manifest、篡改检测、空目录恢复、迁移和版本回退手册已形成 | 真实 CLI 演练确认 Key 字段脱敏、认证文件/旧 Worktree 指针排除、Session 与未集成文件恢复；不覆盖或自动删除现有数据 |
+| `G5` | 已通过 | 个人长期运行 Gate | 复用输入未变化的 G4 中文混合 Provider 真实四角色收据；260 项 focused、5 项 i18n、3 项安全默认、30 项维护测试、双端类型检查、生产构建、原生 ABI 检查与脱敏备份/恢复演练闭合，收据见 `.work/gates/G5.jsonl` |
 
 ## 13. Wave 6：选择性增强
 

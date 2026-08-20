@@ -108,6 +108,12 @@ const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
 const REPLAY_WINDOW_SECONDS = 60 * 5;
 /** Cap how long we wait for the public tunnel before giving up (server stays up). */
 const TUNNEL_START_TIMEOUT_MS = 10_000;
+/** A tunnel needs only a local target. Never expose the listener to the LAN. */
+export const EXTERNAL_BIND_HOST = '127.0.0.1';
+/** Bound unauthenticated work before signature verification. Slack retries are
+ * sparse, so 120 requests/minute leaves ample headroom for personal use. */
+const RATE_LIMIT = 120;
+const RATE_WINDOW_MS = 60_000;
 
 export class SlackWebhookServer {
   private server: Server | null = null;
@@ -127,6 +133,7 @@ export class SlackWebhookServer {
    *  twice when the app subscribes to both `app_mention` and `message.*` (Slack
    *  sends both for one @-mention), and absorbs Slack's retry of un-acked events. */
   private readonly seenEvents: _ISeenEvents = new _SeenEvents();
+  private requestWindow = { start: 0, count: 0 };
 
   constructor(opts: SlackWebhookServerOptions) {
     this.port = opts.port;
@@ -176,7 +183,7 @@ export class SlackWebhookServer {
       const server = createServer((req, res) => this.handleRequest(req, res));
       const onError = (e: Error): void => reject(e);
       server.once('error', onError);
-      server.listen(this.port, () => {
+      server.listen(this.port, EXTERNAL_BIND_HOST, () => {
         server.off('error', onError);
         this.server = server;
         resolve();
@@ -199,6 +206,7 @@ export class SlackWebhookServer {
   /** Buffer the raw body (needed verbatim for the HMAC) under a size cap, then
    *  verify + dispatch. Only POST is accepted. */
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
+    if (!this.allowRequest()) { res.writeHead(429); res.end(); return; }
     if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
     const chunks: Buffer[] = [];
     let size = 0;
@@ -222,6 +230,16 @@ export class SlackWebhookServer {
       if (aborted) return;
       try { res.writeHead(400); res.end(); } catch { /* socket already gone */ }
     });
+  }
+
+  private allowRequest(): boolean {
+    const now = Date.now();
+    if (!this.requestWindow.start || now - this.requestWindow.start > RATE_WINDOW_MS) {
+      this.requestWindow = { start: now, count: 1 };
+      return true;
+    }
+    this.requestWindow.count += 1;
+    return this.requestWindow.count <= RATE_LIMIT;
   }
 
   private handleBody(req: IncomingMessage, res: ServerResponse, rawBody: string): void {

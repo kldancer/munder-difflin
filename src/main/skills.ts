@@ -16,14 +16,34 @@
  *     cached on disk. Network failure is never fatal: a stale cache, then an
  *     empty list, then the UI says so.
  *
- * Nothing here installs anything. Discovery and browsing only — installing a
- * third-party skill means running someone else's instructions inside an agent
- * that has the user's tools, and that decision stays with the user.
+ * Installation is explicit and provenance-locked: a GitHub ref is resolved to
+ * one commit, the downloaded content is hashed, and a local receipt travels
+ * with the skill so the operator can audit and revoke it later.
  */
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import {
+  existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, rmSync, renameSync
+} from 'node:fs';
 import { join, basename, dirname, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
+import { createHash, randomUUID } from 'node:crypto';
 import { getText } from './fetchText';
+
+export interface SkillProvenance {
+  schemaVersion: 1;
+  source: {
+    catalogUrl: string;
+    resolvedUrl: string;
+    owner: string;
+    repo: string;
+    requestedRef: string;
+    resolvedCommit: string;
+    path: string;
+  };
+  content: { sha256: string; files: number };
+  installedAt: string;
+}
+
+export const SKILL_PROVENANCE_FILE = '.munder-skill-lock.json';
 
 export interface LocalSkill {
   id: string;
@@ -34,6 +54,9 @@ export interface LocalSkill {
   /** 'user' = global for the whole machine, 'project' = one repo, 'bundled' = ships with the app. */
   scope: 'user' | 'project' | 'bundled';
   path: string;
+  /** Present for skills installed by Munder. Manually managed skills remain valid
+   * and are reported without invented provenance. */
+  provenance?: SkillProvenance;
 }
 
 export interface CatalogSkill {
@@ -87,13 +110,19 @@ function scanSkillDir(
       try {
         if (!statSync(skillDir).isDirectory() || !existsSync(md)) continue;
         const fm = parseSkillFrontmatter(readFileSync(md, 'utf8'));
+        let provenance: SkillProvenance | undefined;
+        try {
+          const lockPath = join(skillDir, SKILL_PROVENANCE_FILE);
+          if (existsSync(lockPath)) provenance = JSON.parse(readFileSync(lockPath, 'utf8')) as SkillProvenance;
+        } catch { /* a damaged receipt must not hide an otherwise usable skill */ }
         out.push({
           id: `${scope}:${entry}`,
           name: fm.name || entry,
           description: fm.description || '',
           provider,
           scope,
-          path: skillDir
+          path: skillDir,
+          provenance
         });
       } catch { /* one unreadable skill must not hide the rest */ }
     }
@@ -274,6 +303,7 @@ export async function loadCatalog(
 
 /** GitHub's per-directory listing. Only the fields we actually consume. */
 interface GhEntry { name: string; path: string; type: string; size?: number; download_url?: string | null }
+interface GhCommit { sha?: string }
 
 const MAX_FILES = 60;
 const MAX_TOTAL_BYTES = 2 * 1024 * 1024;
@@ -316,21 +346,17 @@ export function safeSkillDirName(raw: string): string | null {
   return base;
 }
 
-function getJson<T>(url: string): Promise<T> {
-  return getText(url).then((t) => JSON.parse(t) as T);
-}
-
-/** officialskills.sh pages are a rendering of a GitHub folder and link back to
- *  it. Resolving that link is one request and turns 578 otherwise un-installable
- *  catalog rows into installable ones. */
-async function resolveSourceUrl(url: string): Promise<string | null> {
-  if (parseGitHubSourceUrl(url)) return url;
-  if (!/^https:\/\/(www\.)?officialskills\.sh\//i.test(url)) return null;
-  try {
-    const html = await getText(url);
-    const m = /https:\/\/github\.com\/[^/"'\s]+\/[^/"'\s]+\/tree\/[^"'\s<>)]+/.exec(html);
-    return m ? m[0].replace(/[.,)]+$/, '') : null;
-  } catch { return null; }
+/** Stable digest over relative path + exact UTF-8 bytes, independent of API
+ * listing order. Exported as the smallest useful verification seam. */
+export function skillContentSha(files: { path: string; body: string }[]): string {
+  const hash = createHash('sha256');
+  for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
+    hash.update(file.path, 'utf8');
+    hash.update('\0');
+    hash.update(file.body, 'utf8');
+    hash.update('\0');
+  }
+  return hash.digest('hex');
 }
 
 /**
@@ -341,9 +367,18 @@ async function resolveSourceUrl(url: string): Promise<string | null> {
  */
 export async function installSkill(
   entryUrl: string,
-  entryName: string
-): Promise<{ ok: true; path: string } | { ok: false; error: string; unsupported?: boolean }> {
-  const source = await resolveSourceUrl(entryUrl);
+  entryName: string,
+  opts: { skillsRoot?: string; fetchText?: (url: string) => Promise<string> } = {}
+): Promise<{ ok: true; path: string; provenance: SkillProvenance } | { ok: false; error: string; unsupported?: boolean }> {
+  const fetch = opts.fetchText ?? getText;
+  const source = parseGitHubSourceUrl(entryUrl) ? entryUrl : await (async () => {
+    if (!/^https:\/\/(www\.)?officialskills\.sh\//i.test(entryUrl)) return null;
+    try {
+      const html = await fetch(entryUrl);
+      const m = /https:\/\/github\.com\/[^/"'\s]+\/[^/"'\s]+\/tree\/[^"'\s<>)]+/.exec(html);
+      return m ? m[0].replace(/[.,)]+$/, '') : null;
+    } catch { return null; }
+  })();
   if (!source) {
     return { ok: false, unsupported: true, error: 'No downloadable source — open Learn more to install it by hand.' };
   }
@@ -353,15 +388,27 @@ export async function installSkill(
   const dirName = safeSkillDirName(gh.path || entryName);
   if (!dirName) return { ok: false, error: 'That skill has a name this app will not create a folder for.' };
 
-  const root = join(homedir(), '.claude', 'skills');
+  const root = opts.skillsRoot ?? join(homedir(), '.claude', 'skills');
   const dest = join(root, dirName);
   if (existsSync(dest)) return { ok: false, error: `Already installed at ${dest}` };
 
-  // An empty ref means "the repo's default branch" — omit the parameter entirely
-  // rather than guessing main vs master.
+  let commit: string;
+  try {
+    const ref = gh.ref || 'HEAD';
+    const data = JSON.parse(await fetch(
+      `https://api.github.com/repos/${gh.owner}/${gh.repo}/commits/${encodeURIComponent(ref)}`
+    )) as GhCommit;
+    if (typeof data.sha !== 'string' || !/^[0-9a-f]{40}$/i.test(data.sha)) throw new Error('invalid commit response');
+    commit = data.sha.toLowerCase();
+  } catch (e) {
+    return { ok: false, error: `Could not pin the source commit: ${e instanceof Error ? e.message : String(e)}` };
+  }
+
+  // The requested ref has already been resolved to a commit, so every directory
+  // listing in this recursive walk observes one immutable tree.
   const api = (p: string) =>
     `https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/${p ? encodeURI(p) : ''}`
-    + (gh.ref ? `?ref=${encodeURIComponent(gh.ref)}` : '');
+    + `?ref=${encodeURIComponent(commit)}`;
 
   const files: { path: string; url: string; size: number }[] = [];
   let total = 0;
@@ -369,7 +416,7 @@ export async function installSkill(
     if (depth > MAX_DEPTH) return 'the folder nests deeper than this installer will follow';
     let listing: GhEntry[];
     try {
-      const res = await getJson<GhEntry[] | GhEntry>(api(path));
+      const res = JSON.parse(await fetch(api(path))) as GhEntry[] | GhEntry;
       listing = Array.isArray(res) ? res : [res];
     } catch (e) {
       return e instanceof Error ? e.message : String(e);
@@ -396,26 +443,62 @@ export async function installSkill(
   if (walkErr) return { ok: false, error: walkErr };
   if (files.length === 0) return { ok: false, error: 'No files found at that source.' };
 
-  // Write only after the whole tree resolved, so a mid-download failure cannot
-  // leave a half-installed skill that an agent would then load.
-  const written: string[] = [];
+  // Fetch everything before exposing a directory agents might load.
+  const downloaded: { path: string; body: string }[] = [];
+  let downloadedBytes = 0;
   try {
     for (const f of files) {
       const target = resolve(dest, f.path);
-      // Post-resolution containment: the only check that survives a crafted path.
       if (target !== dest && !target.startsWith(dest + sep)) {
         throw new Error(`refusing to write outside the skill folder: ${f.path}`);
       }
-      const body = await getText(f.url);
-      mkdirSync(dirname(target), { recursive: true });
-      writeFileSync(target, body);
-      written.push(target);
+      const body = await fetch(f.url);
+      downloadedBytes += Buffer.byteLength(body, 'utf8');
+      if (downloadedBytes > MAX_TOTAL_BYTES) {
+        throw new Error('that skill is larger than this installer will fetch');
+      }
+      downloaded.push({ path: f.path, body });
     }
   } catch (e) {
-    try { rmSync(dest, { recursive: true, force: true }); } catch { /* best effort */ }
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
-  return { ok: true, path: dest };
+
+  const provenance: SkillProvenance = {
+    schemaVersion: 1,
+    source: {
+      catalogUrl: entryUrl,
+      resolvedUrl: source,
+      owner: gh.owner,
+      repo: gh.repo,
+      requestedRef: gh.ref || 'HEAD',
+      resolvedCommit: commit,
+      path: gh.path
+    },
+    content: { sha256: skillContentSha(downloaded), files: downloaded.length },
+    installedAt: new Date().toISOString()
+  };
+
+  const temp = join(root, `.${dirName}.installing-${randomUUID()}`);
+  try {
+    mkdirSync(root, { recursive: true });
+    mkdirSync(temp);
+    for (const f of downloaded) {
+      const target = resolve(temp, f.path);
+      if (target !== temp && !target.startsWith(temp + sep)) {
+        throw new Error(`refusing to write outside the skill folder: ${f.path}`);
+      }
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, f.body);
+    }
+    if (!existsSync(join(temp, 'SKILL.md'))) throw new Error('Source has no SKILL.md at its root.');
+    writeFileSync(join(temp, SKILL_PROVENANCE_FILE), JSON.stringify(provenance, null, 2) + '\n');
+    if (existsSync(dest)) throw new Error(`Already installed at ${dest}`);
+    renameSync(temp, dest);
+  } catch (e) {
+    try { rmSync(temp, { recursive: true, force: true }); } catch { /* best effort */ }
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  return { ok: true, path: dest, provenance };
 }
 
 /**

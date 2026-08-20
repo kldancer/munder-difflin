@@ -5,9 +5,9 @@
  * my agent just do that?", "browse" answers "what else is out there?", and they
  * share the same search box because the user's question is usually just a word.
  *
- * Nothing here installs anything. A skill is instructions that run inside an
- * agent holding the user's tools and keys, so adding one is a decision, not a
- * click — the catalog links out and the user chooses.
+ * A skill is instructions that run inside an agent holding the user's tools and
+ * keys. Installation therefore uses an inline confirmation, then records the
+ * exact source commit and content hash returned by main.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -50,6 +50,7 @@ export function SkillsTab({ agentCwd }: { agentCwd?: string }) {
   /** Uninstall is destructive, so it is two clicks: the first arms this, the
    *  second does it. No modal — the row itself becomes the confirmation. */
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [confirmingInstall, setConfirmingInstall] = useState<string | null>(null);
 
   const loadLocal = useCallback(async () => {
     try { setLocal(await window.cth.skillsLocal(agentCwd)); } catch { setLocal([]); }
@@ -116,6 +117,7 @@ export function SkillsTab({ agentCwd }: { agentCwd?: string }) {
   }, [catalog, owner, category, q]);
 
   const install = async (c: CatalogSkill) => {
+    setConfirmingInstall(null);
     setAction((a) => ({ ...a, [c.url]: { busy: true } }));
     try {
       const res = await window.cth.skillsInstall(c.url, c.name);
@@ -254,6 +256,16 @@ export function SkillsTab({ agentCwd }: { agentCwd?: string }) {
                     fontFamily: 'var(--cth-font-mono)', fontSize: 10.5,
                     color: 'var(--cth-ink-500)', wordBreak: 'break-all'
                   }}>{s.path}</div>
+                  {s.provenance && (
+                    <div style={{
+                      fontFamily: 'var(--cth-font-mono)', fontSize: 10.5,
+                      color: 'var(--cth-ink-500)', wordBreak: 'break-all'
+                    }}>
+                      {t('skills.source')} {s.provenance.source.owner}/{s.provenance.source.repo}
+                      {' · '}{t('skills.commit')} {s.provenance.source.resolvedCommit.slice(0, 12)}
+                      {' · '}sha256 {s.provenance.content.sha256.slice(0, 12)}
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                     <button onClick={() => void window.cth.skillsReveal(s.path)} style={actionBtn('quiet')}>
                       {t('skills.reveal')}
@@ -316,13 +328,26 @@ export function SkillsTab({ agentCwd }: { agentCwd?: string }) {
                     {s.description}
                   </div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <button
-                      onClick={() => void install(s)}
-                      disabled={!!action[s.url]?.busy || !!action[s.url]?.done}
-                      style={actionBtn(action[s.url]?.done ? 'quiet' : 'primary')}
-                    >
-                      {action[s.url]?.busy ? t('skills.installing') : action[s.url]?.done ?? t('skills.install')}
-                    </button>
+                    {confirmingInstall === s.url ? (
+                      <>
+                        <button
+                          onClick={() => void install(s)}
+                          disabled={!!action[s.url]?.busy}
+                          style={actionBtn('primary')}
+                        >{t('skills.confirmInstall')} {s.name}?</button>
+                        <button onClick={() => setConfirmingInstall(null)} style={actionBtn('quiet')}>
+                          {t('skills.cancel')}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmingInstall(s.url)}
+                        disabled={!!action[s.url]?.busy || !!action[s.url]?.done}
+                        style={actionBtn(action[s.url]?.done ? 'quiet' : 'primary')}
+                      >
+                        {action[s.url]?.busy ? t('skills.installing') : action[s.url]?.done ?? t('skills.install')}
+                      </button>
+                    )}
                     <button
                       onClick={() => void window.cth.openExternal(s.url)}
                       style={actionBtn('quiet')}

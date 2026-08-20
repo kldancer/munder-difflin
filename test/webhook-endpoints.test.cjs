@@ -25,7 +25,7 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const loadTs = require('./load-ts.cjs');
 
-const { WebhookServer, LEGACY_ENDPOINT_ID } = loadTs('src/main/webhook.ts');
+const { WebhookServer, LEGACY_ENDPOINT_ID, EXTERNAL_BIND_HOST } = loadTs('src/main/webhook.ts');
 
 const SECRET_A = 'a'.repeat(64);
 const SECRET_B = 'b'.repeat(64);
@@ -223,10 +223,14 @@ test('GET is token-scoped, and answers 404 identically for every miss', async ()
   assert.equal(noToken.status, 401);
 });
 
-test('the query-param token fallback still works', async () => {
+test('capability tokens in URLs are refused so logs cannot capture them', async () => {
   const { server } = makeServer();
   const res = await request(server, { method: 'GET', url: '/alpha?token=good-token' });
-  assert.equal(res.status, 200);
+  assert.equal(res.status, 401);
+});
+
+test('the tunnel target binds to loopback only', () => {
+  assert.equal(EXTERNAL_BIND_HOST, '127.0.0.1');
 });
 
 test('one noisy endpoint cannot starve the others', async () => {
