@@ -260,6 +260,17 @@ export async function removeWorktree(
   return { ok: false, error: res.error };
 }
 
+/** Remove a linked worktree only when git itself confirms it is clean.
+ * Unlike the legacy teardown helper above this intentionally never uses
+ * --force; callers must prove their safety gate immediately before calling. */
+export async function removeWorktreeSafely(
+  cwd: string, wtPath: string
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await runGit(cwd, ['worktree', 'remove', wtPath]);
+  if (res.ok) return { ok: true };
+  return { ok: false, error: res.error };
+}
+
 /** Does this worktree hold work that must NOT be auto-discarded? `keep` is true if
  *  the working tree is dirty (uncommitted/untracked changes) OR the branch has
  *  commits the base branch doesn't (un-integrated / would-be-PR commits). Ephemeral

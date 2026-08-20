@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '@/store/store';
 import { TaskDetail, parseTasks, type HiveTask } from './TasksKanban';
+import type { CoordinationMessage } from './taskCoordination';
 
 /**
  * App-wide host for the task detail: whoever calls store.openTaskDetail(id) —
@@ -17,6 +18,7 @@ export function TaskDetailOverlay() {
   const agents = useStore((s) => s.agents);
   const restorable = useStore((s) => s.restorableAgents);
   const [tasks, setTasks] = useState<HiveTask[]>([]);
+  const [messages, setMessages] = useState<CoordinationMessage[]>([]);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
@@ -32,6 +34,19 @@ export function TaskDetailOverlay() {
     timer.current = setInterval(() => { void refresh(); }, POLL_MS);
     return () => { if (timer.current) clearInterval(timer.current); };
   }, [taskDetailId, refresh]);
+
+  useEffect(() => {
+    let alive = true;
+    const current = tasks.find((candidate) => candidate.id === taskDetailId);
+    if (!current?.conversations?.length) {
+      setMessages([]);
+      return () => { alive = false; };
+    }
+    void window.cth.hiveMessages({ conversations: current.conversations, limit: 40 })
+      .then((next) => { if (alive) setMessages(next); })
+      .catch(() => { if (alive) setMessages([]); });
+    return () => { alive = false; };
+  }, [taskDetailId, tasks]);
 
   if (!taskDetailId) return null;
   const task = tasks.find((t) => t.id === taskDetailId);
@@ -65,6 +80,7 @@ export function TaskDetailOverlay() {
     <TaskDetail
       task={task}
       all={tasks}
+      messages={messages}
       assigneeName={nameFor(task.assignee)}
       onMove={(s) => void move(s)}
       onAssign={assign}

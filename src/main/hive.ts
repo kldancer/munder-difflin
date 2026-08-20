@@ -70,6 +70,7 @@ export interface HiveMessage {
 export interface VoiceMessage {
   id: string;
   conversation: string;
+  in_reply_to: string | null;
   from: string;
   to: string;
   act: MessageAct;
@@ -104,6 +105,8 @@ export interface HiveTask {
   assignee?: string;
   status: 'todo' | 'doing' | 'blocked' | 'done';
   dependsOn: string[];
+  /** Existing Hive Conversation IDs associated with this task. */
+  conversations?: string[];
   priority: number;
   createdAt: string;
   /** First-class human feedback: the god appends {q} when a card can only
@@ -1591,7 +1594,7 @@ export class HiveManager {
    * in both the sender's outbox/.sent and the recipient's inbox/.done; we dedup
    * by message id so each appears once.
    */
-  voiceMessages(opts: { agentId?: string; id?: string; limit?: number; includeArchived?: boolean } = {}): VoiceMessage[] {
+  voiceMessages(opts: { agentId?: string; id?: string; limit?: number; includeArchived?: boolean; conversations?: string[] } = {}): VoiceMessage[] {
     const root = this.root();
     if (!root) return [];
     const agentsDir = join(root, 'agents');
@@ -1600,6 +1603,9 @@ export class HiveManager {
     const wantId = typeof opts.id === 'string' ? opts.id.trim() : '';
     const onlyAgent = typeof opts.agentId === 'string' ? opts.agentId.trim() : '';
     const includeArchived = opts.includeArchived !== false; // default true
+    const conversationIds = Array.isArray(opts.conversations)
+      ? new Set(opts.conversations.filter((id): id is string => typeof id === 'string' && id.length > 0).slice(0, 20))
+      : undefined;
 
     let owners: string[];
     try {
@@ -1624,12 +1630,15 @@ export class HiveManager {
       }
       for (const f of folders) {
         for (const m of this.listMessages(f.dir)) {
-          if (!m || typeof m.id !== 'string' || seen.has(m.id)) continue;
+          if (!m || typeof m.id !== 'string') continue;
+          if (conversationIds && !conversationIds.has(m.conversation)) continue;
+          if (seen.has(m.id)) continue;
           seen.add(m.id);
           if (wantId && m.id !== wantId) continue;
           out.push({
             id: m.id,
             conversation: m.conversation,
+            in_reply_to: m.in_reply_to ?? null,
             from: m.from,
             to: m.to,
             act: m.act,

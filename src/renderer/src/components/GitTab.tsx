@@ -3,6 +3,7 @@ import { CommitGraph } from './git/CommitGraph';
 import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
 import { useTranslation } from 'react-i18next';
+import { WorktreeDeliveryCard } from './WorktreeDeliveryCard';
 
 interface GitCommit {
   sha: string;
@@ -15,6 +16,7 @@ interface GitCommit {
 }
 interface GitStatusEntry { path: string; index: string; worktree: string }
 interface GitStatus { staged: GitStatusEntry[]; unstaged: GitStatusEntry[]; untracked: string[] }
+type DeliveryInspection = Extract<Awaited<ReturnType<Window['cth']['gitDeliveryInspect']>>, { ok: true }>;
 
 export interface GitTabProps {
   cwd: string;
@@ -52,8 +54,12 @@ export function GitTab({ cwd }: GitTabProps) {
   const [upstream, setUpstream] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const [delivery, setDelivery] = useState<DeliveryInspection | null>(null);
+  const [deliveryError, setDeliveryError] = useState<string | null>(null);
+  const [deliveryBusy, setDeliveryBusy] = useState(false);
+  const [deliveryNotice, setDeliveryNotice] = useState<string | null>(null);
 
-  const refresh = async () => {
+  const refresh = async (includeDelivery = true) => {
     setLoading(true);
     setError(undefined);
     try {
@@ -73,18 +79,65 @@ export function GitTab({ cwd }: GitTabProps) {
       if (Array.isArray(l)) setLog(l); else if ('error' in l) setError(prev => prev ?? l.error);
       if ('error' in br) setError(prev => prev ?? br.error); else setBranches({ local: br.local, remote: br.remote });
       if ('error' in ab) { /* keep defaults */ } else { setAhead(ab.ahead); setBehind(ab.behind); setUpstream(ab.upstream); }
+      // Delivery inspection invokes several bounded Git facts. Keep it on the
+      // initial/manual path instead of adding that work to the existing 4s
+      // status poll.
+      if (includeDelivery) {
+        const nextDelivery = await window.cth.gitDeliveryInspect(cwd);
+        if (nextDelivery.ok) {
+          setDelivery(nextDelivery);
+          setDeliveryError(null);
+        } else {
+          setDelivery(null);
+          // A main checkout is not a delivery source; this is normal and should
+          // not turn the ordinary Git tab red.
+          setDeliveryError(/source must be a linked worktree/.test(nextDelivery.error) ? null : nextDelivery.error);
+        }
+      }
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    refresh();
+    void refresh(true);
     // Poll the working-tree status every 4s so freshly-edited files show up.
-    const id = window.setInterval(refresh, 4000);
+    const id = window.setInterval(() => { void refresh(false); }, 4000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd]);
+
+  const mergeDelivery = async () => {
+    if (!delivery || !window.confirm(t('w7.delivery.mergeConfirm', {
+      source: delivery.sourceBranch, target: delivery.targetBranch
+    }))) return;
+    setDeliveryBusy(true);
+    setDeliveryNotice(null);
+    try {
+      const result = await window.cth.gitDeliveryMerge(cwd, delivery.targetBranch);
+      if (!result.ok) setDeliveryError(t('w7.delivery.failed', { error: result.error }));
+      else {
+        setDeliveryError(null);
+        setDeliveryNotice(t('w7.delivery.merged'));
+        await refresh(true);
+      }
+    } finally { setDeliveryBusy(false); }
+  };
+
+  const reclaimDelivery = async () => {
+    if (!delivery || !window.confirm(t('w7.delivery.reclaimConfirm'))) return;
+    setDeliveryBusy(true);
+    setDeliveryNotice(null);
+    try {
+      const result = await window.cth.gitDeliveryReclaim(cwd, delivery.targetBranch);
+      if (!result.ok) setDeliveryError(t('w7.delivery.failed', { error: result.error }));
+      else {
+        setDelivery(null);
+        setDeliveryError(null);
+        setDeliveryNotice(t('w7.delivery.reclaimed'));
+      }
+    } finally { setDeliveryBusy(false); }
+  };
 
   if (isRepo === false) {
     return (
@@ -128,7 +181,7 @@ export function GitTab({ cwd }: GitTabProps) {
           </span>
         )}
         <div style={{ marginLeft: 'auto' }}>
-          <PixelButton variant="ghost" size="sm" onClick={refresh} disabled={loading}>
+          <PixelButton variant="ghost" size="sm" onClick={() => { void refresh(true); }} disabled={loading}>
             {loading ? '...' : 'refresh'}
           </PixelButton>
         </div>
@@ -144,8 +197,36 @@ export function GitTab({ cwd }: GitTabProps) {
         }}>{error}</div>
       )}
 
+      {deliveryError && (
+        <div style={{ padding: '4px 10px', background: 'var(--cth-coral-light)', color: 'var(--cth-ink-900)', fontSize: 12, borderBottom: '1px solid var(--cth-coral)' }}>
+          {deliveryError}
+        </div>
+      )}
+      {deliveryNotice && (
+        <div style={{ padding: '4px 10px', background: 'var(--cth-mint-light)', color: 'var(--cth-ink-900)', fontSize: 12, borderBottom: '1px solid var(--cth-mint)' }}>
+          {deliveryNotice}
+        </div>
+      )}
+
       {/* Body — scrollable, contains status + branches + graph */}
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+        {delivery && (
+          <Section title={t('w7.delivery.title')}>
+            <WorktreeDeliveryCard
+              sourceBranch={delivery.sourceBranch}
+              targetBranch={delivery.targetBranch}
+              sourcePath={delivery.sourcePath}
+              commitsAhead={delivery.commitsAhead}
+              canMerge={delivery.canMerge}
+              canReclaim={delivery.canReclaimAfterMerge}
+              verification={delivery.verification}
+              busy={deliveryBusy}
+              onInspect={() => { void refresh(true); }}
+              onMerge={() => { void mergeDelivery(); }}
+              onReclaim={() => { void reclaimDelivery(); }}
+            />
+          </Section>
+        )}
         {/* Status */}
         <Section title={t('git.status')}>
           {status && (

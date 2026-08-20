@@ -493,7 +493,7 @@ flowchart LR
 
 Provider Hook 是权威运行信号；如果某个 Bridge 缺少可靠的 turn-end 事件，Renderer 使用 PTY 静默时间作为保守回退，把长时间无输出的 `working/compacting` 投影恢复为 `idle`。新 Hook 事件会再次校正状态。
 
-## 13. 故障、恢复与不可丢失语义
+## 13. 故障、交付与不可丢失语义
 
 | 故障 | 系统行为 |
 | --- | --- |
@@ -507,6 +507,21 @@ Provider Hook 是权威运行信号；如果某个 Bridge 缺少可靠的 turn-e
 | 应用启动时 Roster 只恢复一部分 | 首次写入收缩保护拒绝用局部快照覆盖完整历史 Roster |
 | Agent 关闭 | Registry 标记 archived，保留记忆和恢复信息；广播不再向其投递 |
 | 自动权限未开启 | 沿用 Provider 默认审批/沙箱；不会偷偷附加 bypass 参数 |
+
+### 13.1 任务等待的可解释读层
+
+任务账本仍以 `dependsOn` 表达任务依赖，可选 `conversations` 只引用已有 Hive Conversation ID。任务详情通过这两个精确字段读取依赖状态、负责人、缺失任务、消息时间线和 `in_reply_to` 回复关系，再计算“等待依赖、等待某位收件人回复、等待人工问答或当前无明确等待项”。这是一层只读解释，不改变 Router、消息落盘格式或任务状态机。
+
+旧任务没有 `conversations` 时只展示已有任务事实，不扫描全部消息，也不以标题或正文猜测关联。消息正文继续在 Main 侧脱敏后才交给 Renderer，单次查询保持有界。
+
+### 13.2 Worktree 交付门禁
+
+隔离 Worktree 的交付复用现有 Git 页面，并保持“检查 → 显式合并 → 再检查 → 显式回收”的短链路：
+
+1. Main 根据真实 Git 元数据确认来源是同仓库的 linked Worktree、来源分支可定位、目标是当前主 Worktree，且两侧干净；Renderer 不能指定任意目标目录。
+2. 只有检查通过才允许合并；合并冲突时自动执行 `git merge --abort`，保留来源 Worktree、提交和分支。
+3. 只有 `worktreeIsGcSafe` 再次证明成果已集成且工作区干净，才使用非强制 `git worktree remove` 回收目录；分支继续保留。
+4. 活跃 PTY 使用相关目录时拒绝合并或回收；不提供 reset、force remove、自动删除或后台交付。
 
 ## 14. IO、通信延迟与容量边界
 
@@ -531,6 +546,8 @@ Provider Hook 是权威运行信号；如果某个 Bridge 缺少可靠的 turn-e
 
 推荐保持消息“一事一条但不过度碎片化”，大制品只传路径；`memory.md` 只保留提炼事实；长期运行时按明确保留策略归档日志和历史消息，不能用无界自动删除代替治理。
 
+Command Center 的生命周期容量报告只遍历目录项并读取文件元数据，跳过符号链接，按目录数、文件数、深度和累计字节设置硬上限；触及上限时标为局部统计。它只在进入页面或用户刷新时运行，不读取 Session、消息、Prompt、日志或记忆正文，也不包含删除或定时清理能力。默认策略始终是保留，任何治理先完成可验证备份。
+
 ## 15. 核心不变量
 
 1. Agent 只能写自己的 `outbox/`、`memory.md` 和工作目录，不能直接写其他 Agent 的信箱。
@@ -550,6 +567,9 @@ Provider Hook 是权威运行信号；如果某个 Bridge 缺少可靠的 turn-e
 | --- | --- |
 | Provider 类型、能力、启动与恢复合同 | [`src/shared/agentProvider.ts`](../../../src/shared/agentProvider.ts) |
 | Hive 目录、角色 Prompt、消息路由、Provider Bridge | [`src/main/hive.ts`](../../../src/main/hive.ts) |
+| 任务依赖与 Conversation 解释 | [`src/renderer/src/components/taskCoordination.ts`](../../../src/renderer/src/components/taskCoordination.ts) |
+| Worktree 检查、合并与安全回收 | [`src/main/worktreeDelivery.ts`](../../../src/main/worktreeDelivery.ts) |
+| 生命周期有界容量报告 | [`src/main/lifecycleCapacity.ts`](../../../src/main/lifecycleCapacity.ts) |
 | PTY 创建、写入、结束与进程树 | [`src/main/pty.ts`](../../../src/main/pty.ts) |
 | Main IPC、Secret Broker、Hook/控制编排 | [`src/main/index.ts`](../../../src/main/index.ts) |
 | 暂停、工具 Gate、停止和恢复状态 | [`src/main/control.ts`](../../../src/main/control.ts) |

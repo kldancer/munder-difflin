@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PixelPanel } from './PixelPanel';
 import { PixelBadge } from './PixelBadge';
@@ -11,6 +11,7 @@ import { AskMeTab } from './AskMeTab';
 import { TriggersTab } from './triggers/TriggersTab';
 import { TriggerHistoryTab } from './triggers/TriggerHistoryTab';
 import { WorkersTab } from './WorkersTab';
+import { LifecycleCapacityPanel, type LifecycleCapacitySnapshot } from './LifecycleCapacityPanel';
 import { SkillsTab } from './SkillsTab';
 import { acquireTerminal, disposeTerminal, resetTerminal } from './terminalPool';
 import { terminalInstanceKey } from './terminalRecovery';
@@ -1329,7 +1330,21 @@ function ActivityTab() {
   const { t: tr } = useTranslation();
   const [log, setLog] = useState<LogEntry[]>([]);
   const [board, setBoard] = useState('');
+  const [capacity, setCapacity] = useState<LifecycleCapacitySnapshot | null>(null);
+  const [capacityLoading, setCapacityLoading] = useState(false);
+  const [capacityError, setCapacityError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const refreshCapacity = useCallback(async () => {
+    setCapacityLoading(true);
+    try {
+      const result = await window.cth.lifecycleCapacity();
+      if ('error' in result) setCapacityError(result.error);
+      else { setCapacity(result); setCapacityError(null); }
+    } catch (error) {
+      setCapacityError(error instanceof Error ? error.message : String(error));
+    } finally { setCapacityLoading(false); }
+  }, []);
 
   useEffect(() => {
     const refresh = async () => {
@@ -1337,9 +1352,10 @@ function ActivityTab() {
       try { setBoard(await window.cth.hiveBoard()); } catch { /* noop */ }
     };
     refresh();
+    void refreshCapacity();
     timer.current = setInterval(refresh, 3000);
     return () => { if (timer.current) clearInterval(timer.current); };
-  }, []);
+  }, [refreshCapacity]);
 
   const fmt = (e: LogEntry): string => {
     switch (e.kind) {
@@ -1354,6 +1370,13 @@ function ActivityTab() {
 
   return (
     <Scroll>
+      {capacityError && <div style={{ marginBottom: 8, color: 'var(--cth-coral)', fontSize: 11 }}>{tr('w7.capacity.failed', { error: capacityError })}</div>}
+      <LifecycleCapacityPanel
+        snapshot={capacity}
+        loading={capacityLoading}
+        onRefresh={() => { void refreshCapacity(); }}
+      />
+
       <Section title={tr('commandCenter.activitySection')}>
         {log.length === 0 && <Muted>{tr('commandCenter.nothingYet')}</Muted>}
         {[...log].reverse().map((e, i) => (

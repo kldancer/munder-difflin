@@ -91,6 +91,11 @@ import {
   withCodexResumeArgs
 } from '../shared/codexLifecycle';
 import { listRecentSessions } from './sessionCatalog';
+import {
+  inspectWorktreeDelivery, mergeWorktreeDelivery, reclaimWorktreeDelivery,
+  type WorktreeDeliveryRequest
+} from './worktreeDelivery';
+import { snapshotLifecycleCapacity } from './lifecycleCapacity';
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
 
@@ -3113,6 +3118,69 @@ ipcMain.handle('git:checkout', async (_evt, cwd: unknown, ref: unknown, detach: 
     return { ok: false, error: `an agent is actively working in this repo (${busy.id}) — try again when it goes quiet` };
   }
   return checkoutRef(cwd, ref, detach === true);
+});
+
+async function resolveDeliveryRequest(
+  sourceCwd: unknown,
+  expectedTargetBranch?: unknown
+): Promise<{ ok: true; request: WorktreeDeliveryRequest } | { ok: false; error: string }> {
+  if (typeof sourceCwd !== 'string' || !sourceCwd || sourceCwd.length > 4096 || sourceCwd.includes('\0')) {
+    return { ok: false, error: 'invalid source worktree' };
+  }
+  const targetCwd = await mainRepoRoot(sourceCwd);
+  if (!targetCwd) return { ok: false, error: 'source is not in a Git repository' };
+  const target = await getBranch(targetCwd);
+  if ('error' in target || target.detached || !target.current) {
+    return { ok: false, error: 'main checkout must be on a branch' };
+  }
+  if (expectedTargetBranch !== undefined
+    && (typeof expectedTargetBranch !== 'string' || target.current !== expectedTargetBranch)) {
+    return { ok: false, error: 'target branch changed; inspect again before continuing' };
+  }
+  return { ok: true, request: { sourceCwd, targetCwd, targetBranch: target.current } };
+}
+
+function ptyUsingTree(cwd: string, recentOnly: boolean): string | null {
+  const root = resolve(cwd);
+  const now = Date.now();
+  const live = ptyManager.list().find((pty) => {
+    const current = resolve(pty.cwd);
+    const inside = current === root || current.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
+    return inside && (!recentOnly || now - pty.lastOutputAt < 10_000);
+  });
+  return live?.id ?? null;
+}
+
+// W7.2 remains inside the existing Git surface. Renderer supplies only the
+// source worktree plus the branch it just inspected; main resolves the actual
+// main checkout and rejects a stale branch, so the UI cannot redirect a merge
+// to an arbitrary path or silently follow a branch switch.
+ipcMain.handle('git:deliveryInspect', async (_evt, sourceCwd: unknown) => {
+  const resolved = await resolveDeliveryRequest(sourceCwd);
+  return resolved.ok ? inspectWorktreeDelivery(resolved.request) : resolved;
+});
+ipcMain.handle('git:deliveryMerge', async (_evt, sourceCwd: unknown, expectedTargetBranch: unknown) => {
+  const resolved = await resolveDeliveryRequest(sourceCwd, expectedTargetBranch);
+  if (!resolved.ok) return resolved;
+  const busy = ptyUsingTree(resolved.request.sourceCwd, true);
+  if (busy) return { ok: false, error: `agent ${busy} is still producing output; wait and inspect again` };
+  return mergeWorktreeDelivery(resolved.request);
+});
+ipcMain.handle('git:deliveryReclaim', async (_evt, sourceCwd: unknown, expectedTargetBranch: unknown) => {
+  const resolved = await resolveDeliveryRequest(sourceCwd, expectedTargetBranch);
+  if (!resolved.ok) return resolved;
+  const live = ptyUsingTree(resolved.request.sourceCwd, false);
+  if (live) return { ok: false, error: `agent ${live} still owns this worktree; stop it before reclaiming` };
+  return reclaimWorktreeDelivery(resolved.request);
+});
+
+// W7.3 is report-only. It reads stat/name metadata under the configured local
+// harness using fixed budgets; no delete/cleanup IPC exists.
+ipcMain.handle('lifecycle:capacity', () => {
+  const harnessHome = readConfig().harnessHome;
+  if (!harnessHome) return { error: 'harnessHome is not configured' };
+  try { return snapshotLifecycleCapacity({ harnessHome }); }
+  catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
 });
 
 // ─── IPC: roster mirror (shared between dev and a packaged build) ───────────

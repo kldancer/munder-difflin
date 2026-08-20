@@ -5,6 +5,7 @@ import { PixelButton } from './PixelButton';
 import { PixelBadge } from './PixelBadge';
 import { Icon } from './Icon';
 import { useStore } from '@/store/store';
+import { taskCoordination, type CoordinationMessage } from './taskCoordination';
 
 /** A card on the task kanban. Mirrors HiveTask in the main/preload process —
  *  re-declared locally so the renderer doesn't reach into the preload package
@@ -27,6 +28,7 @@ export interface HiveTask {
   assignee?: string;
   status: 'todo' | 'doing' | 'blocked' | 'done';
   dependsOn: string[];
+  conversations?: string[];
   priority: number;
   createdAt: string;
   /** First-class human feedback: the god appends {q} when a card needs the
@@ -90,7 +92,11 @@ export function parseTasks(raw: unknown): HiveTask[] {
       assignee: typeof t.assignee === 'string' ? t.assignee : undefined,
       status: (['todo', 'doing', 'blocked', 'done'] as const).includes(t.status as Status)
         ? (t.status as Status) : 'todo',
-      dependsOn: Array.isArray(t.dependsOn) ? t.dependsOn.filter((d): d is string => typeof d === 'string') : [],
+      dependsOn: (Array.isArray(t.dependsOn) ? t.dependsOn : Array.isArray(t.deps) ? t.deps : [])
+        .filter((d): d is string => typeof d === 'string'),
+      conversations: Array.isArray(t.conversations)
+        ? t.conversations.filter((id): id is string => typeof id === 'string' && id.length > 0)
+        : undefined,
       priority: typeof t.priority === 'number' ? t.priority : 3,
       createdAt: typeof t.createdAt === 'string' ? t.createdAt : new Date().toISOString(),
       humanQA: Array.isArray(t.humanQA)
@@ -169,10 +175,10 @@ export function TasksKanban() {
         borderBottom: '1px solid var(--cth-ink-300)'
       }}>
         <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 9, color: 'var(--cth-ink-500)' }}>
-          {tasks.length} task{tasks.length === 1 ? '' : 's'}
+          {tr('w7.task.count', { count: tasks.length })}
         </span>
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--cth-ink-300)' }}>
-          new work? dispatch it to Michael (monitor tab)
+          {tr('w7.task.newWork')}
         </span>
       </div>
 
@@ -192,7 +198,7 @@ export function TasksKanban() {
                 background: col.accent, boxShadow: 'inset 0 -1px 0 var(--cth-ink-900)',
                 fontFamily: 'var(--cth-font-display)', fontSize: 9, color: 'var(--cth-ink-900)'
               }}>
-                {col.label}
+                {tr(`w7.task.status.${col.key}`)}
                 <span style={{ marginLeft: 'auto', fontSize: 11, fontFamily: 'var(--cth-font-ui)' }}>{cards.length}</span>
               </div>
               <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -293,9 +299,10 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss }: {
 // the big stage instead of the narrow side panel. Exported for App's
 // TaskDetailOverlay; opened via the store's openTaskDetail from anywhere.
 
-export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose }: {
+export function TaskDetail({ task, all, messages = [], assigneeName, onMove, onAssign, onClose }: {
   task: HiveTask;
   all: HiveTask[];
+  messages?: CoordinationMessage[];
   assigneeName?: string;
   onMove: (s: Status) => void;
   onAssign: () => void;
@@ -305,9 +312,17 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
   const col = COLUMNS.find((c) => c.key === task.status) ?? COLUMNS[0];
   // Belt + suspenders: parseTasks normalizes these, but the ledger is a
   // hand-written file — never trust a card's shape at the point of use.
-  const deps = (task.dependsOn ?? [])
-    .map((id) => all.find((t) => t.id === id))
-    .filter((t): t is HiveTask => !!t);
+  const conversationIds = task.conversations ?? [];
+  const coordination = taskCoordination(task, all, messages);
+  const waitText = coordination.wait.kind === 'missing-dependencies'
+    ? tr('w7.task.missingDependency', { items: coordination.wait.items.join('、') })
+    : coordination.wait.kind === 'tasks'
+      ? tr('w7.task.waitingTasks', { items: coordination.wait.items.join('、') })
+      : coordination.wait.kind === 'human'
+        ? tr('w7.task.waitingHuman', { question: coordination.wait.question })
+        : coordination.wait.kind === 'reply'
+          ? tr('w7.task.waitingReply', { agent: coordination.wait.agent, message: coordination.wait.message })
+          : coordination.wait.kind === 'blocked' ? tr('w7.task.blockedUnknown') : tr('w7.task.noWaiting');
   const created = new Date(task.createdAt);
   return (
     <div
@@ -333,7 +348,7 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
               <span style={{
                 fontFamily: 'var(--cth-font-display)', fontSize: 8, padding: '2px 6px 1px',
                 background: col.accent, color: 'var(--cth-ink-900)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)'
-              }}>{col.label}</span>
+              }}>{tr(`w7.task.status.${col.key}`)}</span>
               {assigneeName
                 ? <PixelBadge status="working" label={assigneeName} />
                 : <span style={{ fontSize: 11, color: 'var(--cth-ink-300)' }}>{tr('agent.unassigned')}</span>}
@@ -353,11 +368,42 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
               {task.description?.trim() || <span style={{ color: 'var(--cth-ink-300)' }}>{tr('tasks.noDescription')}</span>}
             </div>
 
+            {/* One-level coordination facts: exact task IDs and Conversation IDs only. */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, color: 'var(--cth-ink-500)' }}>{tr('w7.task.coordination')}</div>
+              <div style={{ fontSize: 12, color: 'var(--cth-ink-900)' }}>
+                {waitText}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--cth-ink-600)' }}>
+                {tr('w7.task.dependencies')}：{coordination.dependencies.length === 0 ? tr('w7.task.none') : coordination.dependencies.map((dep) => dep.missing
+                  ? `${dep.id}（${tr('w7.task.missing')}）`
+                  : `${dep.title}（${tr(`w7.task.status.${dep.status ?? 'todo'}`)}，${tr('w7.task.owner', { agent: dep.assignee ?? tr('w7.task.unassigned') })}）`).join('、')}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--cth-ink-600)' }}>
+                {tr('w7.task.conversations')}：{conversationIds.length === 0 ? tr('w7.task.noConversation') : conversationIds.join('、')}
+              </div>
+              {conversationIds.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {coordination.messages.length === 0
+                    ? <span style={{ fontSize: 11, color: 'var(--cth-ink-400)' }}>{tr('w7.task.noMessages')}</span>
+                    : coordination.messages.map((message) => (
+                      <div key={message.id} style={{ padding: '4px 6px', background: 'var(--cth-paper-100)', fontSize: 11, lineHeight: '15px' }}>
+                        <span style={{ color: 'var(--cth-ink-500)' }}>{message.from} → {message.to}</span>{' '}
+                        <span>{message.subject}</span>{' '}
+                        <span style={{ color: 'var(--cth-ink-500)' }}>({message.in_reply_to
+                          ? tr('w7.task.replyTo', { message: message.in_reply_to })
+                          : tr('w7.task.newMessage')})</span>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+
             {/* The human Q&A trail — every decision documented on the card */}
             {(task.humanQA?.length ?? 0) > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, color: 'var(--cth-ink-500)' }}>
-                  HUMAN Q&A
+                  {tr('w7.task.humanQA')}
                 </div>
                 {task.humanQA!.map((e, i) => (
                   <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -380,33 +426,11 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
                       </div>
                     ) : (
                       <div style={{ fontSize: 11, color: 'var(--cth-coral)', fontFamily: 'var(--cth-font-display)' }}>
-                        AWAITING YOUR ANSWER — ASK ME TAB
+                        {tr('w7.task.awaitingHuman')}
                       </div>
                     )}
                   </div>
                 ))}
-              </div>
-            )}
-
-            {/* Dependencies, resolved to titles */}
-            {deps.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, color: 'var(--cth-ink-500)' }}>
-                  DEPENDS ON
-                </div>
-                {deps.map((d) => {
-                  const dc = COLUMNS.find((c) => c.key === d.status) ?? COLUMNS[0];
-                  return (
-                    <div key={d.id} style={{
-                      display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px',
-                      background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
-                      fontSize: 12, color: 'var(--cth-ink-700)'
-                    }}>
-                      <span style={{ width: 8, height: 8, background: dc.accent, boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', flexShrink: 0 }} />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.title}</span>
-                    </div>
-                  );
-                })}
               </div>
             )}
 
@@ -421,11 +445,11 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
                   fontSize: 12, color: 'var(--cth-ink-900)', cursor: 'pointer'
                 }}
               >
-                {COLUMNS.map((c) => (<option key={c.key} value={c.key}>{c.label.toLowerCase()}</option>))}
+                {COLUMNS.map((c) => (<option key={c.key} value={c.key}>{tr(`w7.task.status.${c.key}`)}</option>))}
               </select>
               <PixelButton variant="secondary" size="sm" onClick={onAssign}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                  <Icon name="arrow-right" /> assign
+                  <Icon name="arrow-right" /> {tr('w7.task.assign')}
                 </span>
               </PixelButton>
               <PixelButton variant="ghost" size="sm" onClick={onClose}>{tr('tasks.close')}</PixelButton>

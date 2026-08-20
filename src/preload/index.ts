@@ -78,6 +78,7 @@ export interface HiveMessage {
 export interface VoiceMessage {
   id: string;
   conversation: string;
+  in_reply_to: string | null;
   from: string;
   to: string;
   act: HiveMessage['act'];
@@ -168,6 +169,7 @@ export interface HiveTask {
   assignee?: string;
   status: 'todo' | 'doing' | 'blocked' | 'done';
   dependsOn: string[];
+  conversations?: string[];
   priority: number;
   createdAt: string;
   /** First-class human feedback: god appends {q}, the harness UI fills {a};
@@ -410,6 +412,44 @@ export interface GitCommit {
 }
 export interface GitStatusEntry { path: string; index: string; worktree: string }
 export interface GitStatus { staged: GitStatusEntry[]; unstaged: GitStatusEntry[]; untracked: string[] }
+export interface WorktreeDeliveryInspection {
+  ok: true;
+  sourcePath: string;
+  targetPath: string;
+  sourceBranch: string;
+  targetBranch: string;
+  sourceDirty: boolean;
+  targetDirty: boolean;
+  sourceStatus: GitStatus | { error: string };
+  targetStatus: GitStatus | { error: string };
+  sourceWorktree: { path: string; head: string; branch: string | null };
+  commitsAhead: number;
+  canMerge: boolean;
+  canReclaimAfterMerge: boolean;
+  reclaimDetail: string;
+  verification: string[];
+}
+export type WorktreeDeliveryResult = WorktreeDeliveryInspection | { ok: false; error: string; sourcePath?: string };
+
+export interface CapacityMetric { files: number; bytes: number; directories: number; partial: boolean }
+export interface LifecycleCapacitySnapshot {
+  format: 1;
+  scannedAt: string;
+  harnessHome: string;
+  budgets: { maxDirectories: number; maxFiles: number; maxDepth: number; maxBytes: number };
+  sessions: CapacityMetric;
+  messages: {
+    inboxPending: CapacityMetric; inboxDone: CapacityMetric;
+    outboxPending: CapacityMetric; outboxSent: CapacityMetric;
+  };
+  activityLog: CapacityMetric;
+  costLedger: CapacityMetric;
+  memory: CapacityMetric;
+  worktree: CapacityMetric;
+  policy: {
+    default: 'retain'; cleanup: 'manual-only'; backupBeforeGovernance: true; note: string;
+  };
+}
 /** A single file's two sides for a working-tree-vs-HEAD diff (see main git.getDiff). */
 export interface GitDiff {
   ok: true;
@@ -741,6 +781,20 @@ const api = {
     ipcRenderer.invoke('git:checkout', cwd, ref, detach === true) as Promise<
       { ok: true; detached: boolean } | { ok: false; error: string }
     >,
+  /** W7.2: inspect and explicitly deliver one linked worktree into the main
+   *  checkout's currently inspected branch. Main resolves the target path. */
+  gitDeliveryInspect: (sourceCwd: string): Promise<WorktreeDeliveryResult> =>
+    ipcRenderer.invoke('git:deliveryInspect', sourceCwd),
+  gitDeliveryMerge: (sourceCwd: string, expectedTargetBranch: string): Promise<
+    { ok: true; sourceBranch: string } | { ok: false; error: string; sourcePath?: string }
+  > => ipcRenderer.invoke('git:deliveryMerge', sourceCwd, expectedTargetBranch),
+  gitDeliveryReclaim: (sourceCwd: string, expectedTargetBranch: string): Promise<
+    { ok: true; detail: string } | { ok: false; error: string; sourcePath?: string }
+  > => ipcRenderer.invoke('git:deliveryReclaim', sourceCwd, expectedTargetBranch),
+
+  /** W7.3: bounded, report-only local capacity metadata. No cleanup API exists. */
+  lifecycleCapacity: (): Promise<LifecycleCapacitySnapshot | { error: string }> =>
+    ipcRenderer.invoke('lifecycle:capacity'),
 
   // ─── Hive (multi-agent coordination) ─────────────────────────────────────
   hiveRegistry: (): Promise<HiveRegistry> => ipcRenderer.invoke('hive:registry'),
@@ -755,7 +809,7 @@ const api = {
    *  main. Pass { id } for one message, { agentId } to scope to one mailbox, or
    *  {} for the whole floor. Backs Realtime Michael's get_messages. The renderer
    *  never sees a raw body or a secret — stripping happens main-side. */
-  hiveMessages: (opts?: { agentId?: string; id?: string; limit?: number; includeArchived?: boolean }): Promise<VoiceMessage[]> =>
+  hiveMessages: (opts?: { agentId?: string; id?: string; limit?: number; includeArchived?: boolean; conversations?: string[] }): Promise<VoiceMessage[]> =>
     ipcRenderer.invoke('hive:messages', opts ?? {}),
   /** Consolidated per-agent directory (registry + telemetry + context), incl.
    *  archived agents. Backs Realtime Michael's get_agent_detail / list_agents. */
