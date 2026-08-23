@@ -59,6 +59,8 @@ export interface HarnessConfig {
    *  src/main/config.ts. */
   audience?: 'technical' | 'non-technical';
   harnessHome: string | null;
+  /** Read-only Team OS root. Unset uses the per-user default or environment override. */
+  teamOsHome?: string;
   /** Recently-opened hive home folders (most-recent first) for the launch picker.
    *  Mirrors src/main/config.ts. */
   recentHives?: string[];

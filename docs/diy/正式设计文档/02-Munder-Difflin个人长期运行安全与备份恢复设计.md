@@ -111,10 +111,11 @@ Munder 安装的 Skill 随目录保存 `.munder-skill-lock.json`，包含目录�
 
 ### 4.3 推荐本机布局与双运行形态
 
-个人长期使用采用“一套稳定办公室、一套开发办公室、一个版本化备份区”的固定布局。三个目录都应位于源码仓库、Electron `userData` 和 `.app` 包之外，避免更新应用、清理构建产物或切换 Git 分支时连带影响办公室数据。
+个人长期使用采用“一套独立版本化的 Team OS、一套稳定办公室、一套开发办公室、一个版本化备份区”的固定布局。四个目录都应位于源码仓库、Electron `userData` 和 `.app` 包之外，避免更新应用、清理构建产物或切换 Git 分支时连带影响个人制度与办公室数据。
 
 ```text
 ~/Munder-Difflin/
+├── team-os/              # 个人团队制度、通用角色/流程和项目只读适配器；独立私有 Git 仓库
 ├── office/               # 日常稳定 harnessHome：由已安装的 macOS 应用使用
 ├── office-dev/           # 开发 harnessHome：Provider/Hive/Session 等结构性开发使用
 └── backups/              # 经 verify 的脱敏快照；按版本或时间建立新目录
@@ -124,6 +125,7 @@ Munder 安装的 Skill 随目录保存 `.munder-skill-lock.json`，包含目录�
 
 ```mermaid
 flowchart LR
+    TeamOS["📚 team-os/\n通用制度 · 角色 · 项目索引"]
     Source["🧑‍💻 源码开发版\nnpm run dev"]
     App["🍎 日常 macOS 应用\nMunder Difflin.app"]
     DevOffice[("🧪 office-dev/\n开发办公室")]
@@ -131,6 +133,8 @@ flowchart LR
     Backup[("🧳 backups/\n脱敏快照")]
     Stop{{"🛑 单写者门\n另一实例必须退出"}}
 
+    TeamOS -. 只读投影 .-> Source
+    TeamOS -. 只读投影 .-> App
     Source <--> DevOffice
     Source -. 仅非结构性验证 .-> Stop
     App --> Stop --> StableOffice
@@ -141,9 +145,14 @@ flowchart LR
     classDef stable fill:#dcf7e8,stroke:#2f855a,color:#16442f,stroke-width:2px;
     classDef safety fill:#ffe1e8,stroke:#b64663,color:#591f31,stroke-width:2px;
     class Source,App runtime;
+    class TeamOS stable;
     class DevOffice,StableOffice,Backup stable;
     class Stop safety;
 ```
+
+`team-os/` 不是 `harnessHome`，也不是 Hive 的上级状态目录。它保存跨项目稳定的个人团队制度、通用角色与流程、模板、评测准则和项目适配器；`office/` 与 `office-dev/` 保存角色 Session、信箱、任务、日志和 Provider Home 等运行事实。Munder 后续只能把 Team OS 的适用片段只读投影到 Agent 启动上下文，不得把运行日志、Transcript、Key 或动态任务反写为 Team OS 权威。
+
+Team OS 使用自己的私有 Git 历史和独立备份策略。当前 Harness 快照工具只负责 `harnessHome` 与 Electron `userData`，不自动把 `team-os/` 纳入办公室快照；因此备份办公室不能替代提交或备份 Team OS，反之亦然。完整分层合同见 [个人团队操作系统与多项目工作流分层设计](04-Munder-Difflin个人团队操作系统与多项目工作流分层设计.md)。
 
 运行与切换合同如下：
 

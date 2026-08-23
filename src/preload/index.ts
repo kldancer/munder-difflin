@@ -13,6 +13,8 @@ import type { HeroPayload } from '../shared/heroPayload';
 export type { HeroPayload } from '../shared/heroPayload';
 import type { LocalSkill, CatalogSkill } from '../main/skills';
 export type { LocalSkill, CatalogSkill } from '../main/skills';
+import type { TeamOsSnapshot } from '../main/teamOs';
+export type { TeamOsSnapshot } from '../main/teamOs';
 import type {
   ContextRule, ContextTriggerConfig, OrgTriggerConfig, TriggerHistoryEntry, WebhookTrigger
 } from '../shared/triggers';
@@ -276,6 +278,8 @@ export interface HarnessConfig {
    *  Mirrors src/main/config.ts. */
   audience?: 'technical' | 'non-technical';
   harnessHome: string | null;
+  /** Read-only Team OS root. Unset uses the per-user default or environment override. */
+  teamOsHome?: string;
   /** Recently-opened hive home folders (most-recent first). Mirrors src/main/config.ts. */
   recentHives?: string[];
   registeredRepos: string[];
@@ -795,6 +799,9 @@ const api = {
   /** W7.3: bounded, report-only local capacity metadata. No cleanup API exists. */
   lifecycleCapacity: (): Promise<LifecycleCapacitySnapshot | { error: string }> =>
     ipcRenderer.invoke('lifecycle:capacity'),
+
+  /** TOS1/TOS2: bounded, read-only Team OS project/rule projection. */
+  teamOsSnapshot: (): Promise<TeamOsSnapshot> => ipcRenderer.invoke('teamOs:snapshot'),
 
   // ─── Hive (multi-agent coordination) ─────────────────────────────────────
   hiveRegistry: (): Promise<HiveRegistry> => ipcRenderer.invoke('hive:registry'),

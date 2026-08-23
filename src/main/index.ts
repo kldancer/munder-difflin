@@ -96,6 +96,7 @@ import {
   type WorktreeDeliveryRequest
 } from './worktreeDelivery';
 import { snapshotLifecycleCapacity } from './lifecycleCapacity';
+import { loadTeamOsSnapshot } from './teamOs';
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
 
@@ -3181,6 +3182,17 @@ ipcMain.handle('lifecycle:capacity', () => {
   if (!harnessHome) return { error: 'harnessHome is not configured' };
   try { return snapshotLifecycleCapacity({ harnessHome }); }
   catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
+});
+
+// TOS1: bounded, read-only Team OS projection. Missing/invalid contracts are
+// returned as explicit states; no throw reaches the renderer and no terminal or
+// hive service depends on this handler succeeding.
+ipcMain.handle('teamOs:snapshot', () => {
+  const config = readConfig();
+  return loadTeamOsSnapshot({
+    configuredHome: config.teamOsHome,
+    environmentHome: process.env.MUNDER_TEAM_OS_HOME
+  });
 });
 
 // ─── IPC: roster mirror (shared between dev and a packaged build) ───────────

@@ -187,6 +187,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [changeMode, setChangeMode] = useState<'move' | 'fresh'>('move');
   const [changeBusy, setChangeBusy] = useState(false);
   const [changeErr, setChangeErr] = useState('');
+  const [teamOsHome, setTeamOsHome] = useState(config.teamOsHome ?? '');
+  const [teamOsHomeNote, setTeamOsHomeNote] = useState('');
 
   // `notifications` is an optional field on the main-process config; the renderer
   // mirror type may not declare it yet, so read it defensively.
@@ -698,6 +700,32 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     setChangeHome(res.path);
   };
 
+  /** Team OS is a read-only control-plane source, independent from harnessHome.
+   *  Updating it is live and therefore never relaunches or touches sessions. */
+  const pickTeamOsHome = async () => {
+    const res = await window.cth.chooseFolder();
+    if (!res.ok) return;
+    try {
+      await window.cth.updateConfig({ teamOsHome: res.path });
+      setTeamOsHome(res.path);
+      setTeamOsHomeNote(s('saved'));
+      setTimeout(() => setTeamOsHomeNote(''), 2200);
+    } catch (error) {
+      setTeamOsHomeNote(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const useDefaultTeamOsHome = async () => {
+    try {
+      await window.cth.updateConfig({ teamOsHome: undefined });
+      setTeamOsHome('');
+      setTeamOsHomeNote(s('saved'));
+      setTimeout(() => setTeamOsHomeNote(''), 2200);
+    } catch (error) {
+      setTeamOsHomeNote(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   /** Apply the home-folder change. On success the app relaunches (never resolves);
    *  on failure we surface the error and the existing home keeps running. */
   const applyChangeHome = async () => {
@@ -917,6 +945,35 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           }}>{config.harnessHome ?? '—'}</span>
                           <PixelButton variant="secondary" size="sm" onClick={pickNewHome}>{s('change')}</PixelButton>
                         </div>
+                      </div>
+
+                      {/* Team OS root — a live read-only projection source, not a
+                          second harness home and never a reason to restart PTYs. */}
+                      <div>
+                        <div style={{
+                          fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
+                          color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 6
+                        }}>
+                          {t('teamOs.projects.home')}
+                        </div>
+                        <div style={{ color: 'var(--cth-ink-500)', fontSize: 12, lineHeight: '16px', marginBottom: 8 }}>
+                          {t('teamOs.projects.configHelp')}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, fontSize: 13, lineHeight: '20px', alignItems: 'center' }}>
+                          <span style={{
+                            flex: 1, color: 'var(--cth-ink-900)', wordBreak: 'break-all',
+                            fontFamily: 'var(--cth-font-mono, monospace)'
+                          }}>{teamOsHome || '~/Munder-Difflin/team-os'}</span>
+                          {teamOsHome && (
+                            <PixelButton variant="secondary" size="sm" onClick={() => { void useDefaultTeamOsHome(); }}>
+                              {t('teamOs.projects.useDefault')}
+                            </PixelButton>
+                          )}
+                          <PixelButton variant="secondary" size="sm" onClick={() => { void pickTeamOsHome(); }}>
+                            {s('pick')}
+                          </PixelButton>
+                        </div>
+                        {teamOsHomeNote && <div style={{ color: 'var(--cth-ink-500)', fontSize: 11, marginTop: 5 }}>{teamOsHomeNote}</div>}
                       </div>
 
                       <div style={{ height: 1, background: 'var(--cth-ink-300)' }} />

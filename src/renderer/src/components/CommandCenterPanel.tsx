@@ -17,6 +17,7 @@ import { acquireTerminal, disposeTerminal, resetTerminal } from './terminalPool'
 import { terminalInstanceKey } from './terminalRecovery';
 import { Icon } from './Icon';
 import { MemoryGraphPanel } from './MemoryGraphPanel';
+import { TeamOsProjectsPanel } from './TeamOsProjectsPanel';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
 import { COMMAND_GROUPS } from '@shared/claudeCommands';
 import { useStore, triggerHistoryVisible, type Agent } from '@/store/store';
@@ -46,7 +47,7 @@ import { summarizeFleet } from './fleetStatusSummary';
 // the old Schedules tab: schedules are now one of four trigger types, and the
 // whole surface lives in ./triggers (see src/shared/triggers.ts for the contract).
 type CCTab = 'terminal' | 'floor' | 'tasks' | 'human' | 'triggers' | 'trigger-history'
-  | 'memory' | 'graph' | 'activity' | 'skills' | 'workers';
+  | 'memory' | 'graph' | 'activity' | 'skills' | 'workers' | 'projects';
 
 /** Fallback denominator for the per-agent token meter when no floor token budget
  *  is configured — so the bar reads as a budget estimate (filled + remaining)
@@ -67,6 +68,7 @@ interface GHIssue {
 const TABS: { key: CCTab; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
   { key: 'terminal', label: 'terminal', icon: 'terminal' },
   { key: 'floor', label: 'monitor', icon: 'mcp' },
+  { key: 'projects', label: 'projects', icon: 'folder' },
   { key: 'tasks', label: 'tasks', icon: 'check' },
   { key: 'human', label: 'ask me', icon: 'bell' },
   { key: 'triggers', label: 'triggers', icon: 'clock' },
@@ -275,7 +277,9 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
               fontFamily: 'var(--cth-font-ui)', fontSize: 13
             }}
           >
-            <Icon name={t.icon} /> {tr(`commandCenter.${t.label === 'ask me' ? 'askMe' : t.label}`)}
+            <Icon name={t.icon} /> {t.key === 'projects'
+              ? tr('teamOs.projects.title')
+              : tr(`commandCenter.${t.label === 'ask me' ? 'askMe' : t.label}`)}
           </button>
         ))}
       </div>
@@ -311,6 +315,7 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
           )
         )}
         {tab === 'floor' && <FloorTab seed={dispatchSeed} />}
+        {tab === 'projects' && <TeamOsProjectsPanel />}
         {tab === 'tasks' && <TasksKanban />}
         {tab === 'human' && <AskMeTab />}
         {tab === 'triggers' && <TriggersTab />}
