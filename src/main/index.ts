@@ -96,7 +96,12 @@ import {
   type WorktreeDeliveryRequest
 } from './worktreeDelivery';
 import { snapshotLifecycleCapacity } from './lifecycleCapacity';
-import { loadTeamOsSnapshot } from './teamOs';
+import {
+  compileTeamOsWorkOrder,
+  loadTeamOsPreparationCatalog,
+  loadTeamOsSnapshot,
+  type TeamOsWorkOrderRequest
+} from './teamOs';
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
 
@@ -3193,6 +3198,25 @@ ipcMain.handle('teamOs:snapshot', () => {
     configuredHome: config.teamOsHome,
     environmentHome: process.env.MUNDER_TEAM_OS_HOME
   });
+});
+
+ipcMain.handle('teamOs:preparationCatalog', () => {
+  const config = readConfig();
+  return loadTeamOsPreparationCatalog({
+    configuredHome: config.teamOsHome,
+    environmentHome: process.env.MUNDER_TEAM_OS_HOME
+  });
+});
+
+ipcMain.handle('teamOs:compileWorkOrder', (_evt, payload: unknown) => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { ok: false, error: { code: 'WORK_ORDER_INVALID', message: 'work order request must be an object' } };
+  }
+  const config = readConfig();
+  return compileTeamOsWorkOrder({
+    configuredHome: config.teamOsHome,
+    environmentHome: process.env.MUNDER_TEAM_OS_HOME
+  }, { ...(payload as TeamOsWorkOrderRequest), locale: config.locale });
 });
 
 // ─── IPC: roster mirror (shared between dev and a packaged build) ───────────

@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { TeamOsProjectSnapshot, TeamOsReference, TeamOsSnapshot } from '../../../main/teamOs';
+import type {
+  TeamOsPreparationCatalog,
+  TeamOsProjectSnapshot,
+  TeamOsReference,
+  TeamOsSnapshot
+} from '../../../main/teamOs';
 import { Icon } from './Icon';
 import { PixelButton } from './PixelButton';
+import { TeamOsWorkComposer } from './TeamOsWorkComposer';
 
 const statusColor: Record<TeamOsProjectSnapshot['status'], string> = {
   ready: 'var(--cth-mint)',
@@ -47,7 +53,13 @@ function ReferenceGroup({
   );
 }
 
-function ProjectCard({ project }: { project: TeamOsProjectSnapshot }) {
+function ProjectCard({
+  project, canPrepare, onPrepare
+}: {
+  project: TeamOsProjectSnapshot;
+  canPrepare: boolean;
+  onPrepare: () => void;
+}) {
   const { t } = useTranslation();
   const constraints = Object.entries(project.constraints);
   return (
@@ -74,6 +86,11 @@ function ProjectCard({ project }: { project: TeamOsProjectSnapshot }) {
           boxShadow: `inset 0 0 0 1px ${statusColor[project.status]}`,
           padding: '3px 6px 2px', whiteSpace: 'nowrap'
         }}>{t(`teamOs.projects.${project.status}`)}</span>
+        {project.status === 'ready' && (
+          <PixelButton variant="secondary" size="sm" disabled={!canPrepare} onClick={onPrepare}>
+            {t('teamOs.prepare.open')}
+          </PixelButton>
+        )}
       </div>
 
       {project.error && (
@@ -129,13 +146,25 @@ function PathFact({ label, value }: { label: string; value: string }) {
 export function TeamOsProjectsPanel() {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<TeamOsSnapshot | null>(null);
+  const [catalog, setCatalog] = useState<TeamOsPreparationCatalog | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [preparingProjectId, setPreparingProjectId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setLoadError('');
-    try { setSnapshot(await window.cth.teamOsSnapshot()); }
+    try {
+      const [nextSnapshot, nextCatalog] = await Promise.all([
+        window.cth.teamOsSnapshot(),
+        window.cth.teamOsPreparationCatalog()
+      ]);
+      setSnapshot(nextSnapshot);
+      setCatalog(nextCatalog);
+      setPreparingProjectId((current) => nextSnapshot.projects.some(
+        (project) => project.id === current && project.status === 'ready'
+      ) ? current : null);
+    }
     catch (error) { setLoadError(error instanceof Error ? error.message : String(error)); }
     finally { setLoading(false); }
   }, []);
@@ -193,7 +222,23 @@ export function TeamOsProjectsPanel() {
       {snapshot?.status === 'ready' && snapshot.projects.length === 0 && (
         <div style={{ color: 'var(--cth-ink-500)', fontSize: 12 }}>{t('teamOs.projects.empty')}</div>
       )}
-      {snapshot?.projects.map((project) => <ProjectCard key={project.id} project={project} />)}
+      {snapshot?.projects.map((project) => <ProjectCard
+        key={project.id}
+        project={project}
+        canPrepare={catalog?.status === 'ready'}
+        onPrepare={() => setPreparingProjectId(project.id)}
+      />)}
+
+      {catalog?.status === 'invalid' && (
+        <div style={{ color: 'var(--cth-coral)', background: 'var(--cth-coral-light)', padding: 8, fontSize: 12 }}>
+          {t('teamOs.prepare.catalogInvalid')}: {catalog.error?.message}
+        </div>
+      )}
+
+      {preparingProjectId && catalog?.status === 'ready' && snapshot && (() => {
+        const project = snapshot.projects.find((candidate) => candidate.id === preparingProjectId);
+        return project ? <TeamOsWorkComposer project={project} catalog={catalog} onClose={() => setPreparingProjectId(null)} /> : null;
+      })()}
 
       <footer style={{ color: 'var(--cth-ink-500)', fontSize: 11, lineHeight: '16px', paddingBottom: 4 }}>
         <div>{t('teamOs.projects.noBodies')}</div>

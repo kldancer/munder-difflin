@@ -13,8 +13,20 @@ import type { HeroPayload } from '../shared/heroPayload';
 export type { HeroPayload } from '../shared/heroPayload';
 import type { LocalSkill, CatalogSkill } from '../main/skills';
 export type { LocalSkill, CatalogSkill } from '../main/skills';
-import type { TeamOsSnapshot } from '../main/teamOs';
-export type { TeamOsSnapshot } from '../main/teamOs';
+import type {
+  TeamOsCompiledWorkOrder,
+  TeamOsCompileFailure,
+  TeamOsPreparationCatalog,
+  TeamOsSnapshot,
+  TeamOsWorkOrderRequest
+} from '../main/teamOs';
+export type {
+  TeamOsCompiledWorkOrder,
+  TeamOsCompileFailure,
+  TeamOsPreparationCatalog,
+  TeamOsSnapshot,
+  TeamOsWorkOrderRequest
+} from '../main/teamOs';
 import type {
   ContextRule, ContextTriggerConfig, OrgTriggerConfig, TriggerHistoryEntry, WebhookTrigger
 } from '../shared/triggers';
@@ -802,6 +814,12 @@ const api = {
 
   /** TOS1/TOS2: bounded, read-only Team OS project/rule projection. */
   teamOsSnapshot: (): Promise<TeamOsSnapshot> => ipcRenderer.invoke('teamOs:snapshot'),
+
+  /** TOS3: compact role/capability catalog plus a reviewable work-order compiler. */
+  teamOsPreparationCatalog: (): Promise<TeamOsPreparationCatalog> =>
+    ipcRenderer.invoke('teamOs:preparationCatalog'),
+  teamOsCompileWorkOrder: (request: TeamOsWorkOrderRequest): Promise<TeamOsCompiledWorkOrder | TeamOsCompileFailure> =>
+    ipcRenderer.invoke('teamOs:compileWorkOrder', request),
 
   // ─── Hive (multi-agent coordination) ─────────────────────────────────────
   hiveRegistry: (): Promise<HiveRegistry> => ipcRenderer.invoke('hive:registry'),

@@ -7,7 +7,13 @@ const os = require('node:os');
 const path = require('node:path');
 const loadTs = require('./load-ts.cjs');
 
-const { loadTeamOsSnapshot, resolveTeamOsHome, TEAM_OS_LIMITS } = loadTs('src/main/teamOs.ts');
+const {
+  compileTeamOsWorkOrder,
+  loadTeamOsPreparationCatalog,
+  loadTeamOsSnapshot,
+  resolveTeamOsHome,
+  TEAM_OS_LIMITS
+} = loadTs('src/main/teamOs.ts');
 
 function file(filename, content) {
   fs.mkdirSync(path.dirname(filename), { recursive: true });
@@ -31,6 +37,23 @@ function fixture() {
     'evidence:', '  gateReceipts: .work/gates',
     'constraints:', '  copyAuthorityDocuments: false', '  allowGitMutation: false'
   ].join('\n'));
+  file(path.join(teamOsHome, 'roles', 'capabilities.yaml'), [
+    'version: 2',
+    'roles:',
+    '  - id: delivery-engineer',
+    '    label: 端到端交付',
+    '    capabilities: [implementation, validation]',
+    '    authority: assigned-local-write',
+    '    writePolicy: single-writer',
+    '    knownBlindSpots: [needs-specialist-for-gaps]',
+    'capabilityProfiles:',
+    '  - id: frontend-engineering',
+    '    label: 前端工程',
+    '    activationSignals: [electron-ui]',
+    '    evidence: [component-contract, real-entry]',
+    '    defaultMode: overlay'
+  ].join('\n'));
+  file(path.join(teamOsHome, 'templates', 'outcome-card.yaml'), 'version: 3\nid: example\n');
   return { outer, teamOsHome, projectRoot };
 }
 
@@ -58,6 +81,86 @@ test('loads only bounded project metadata and never copies authority content', (
   assert.deepEqual(result.projects[0].constraints, { copyAuthorityDocuments: false, allowGitMutation: false });
   assert.equal(JSON.stringify(result).includes('PRIVATE-BODY-MUST-NOT-CROSS'), false);
   assert.deepEqual(result.policy, { readOnly: true, contentCopied: false, autoRouting: false, terminalFallback: true });
+});
+
+test('loads the bounded TOS3 role catalog and template contract', () => {
+  const { teamOsHome } = fixture();
+  const result = loadTeamOsPreparationCatalog({ configuredHome: teamOsHome });
+  assert.equal(result.status, 'ready');
+  assert.equal(result.outcomeTemplateVersion, 3);
+  assert.deepEqual(result.roles.map((role) => role.id), ['delivery-engineer']);
+  assert.deepEqual(result.capabilityProfiles.map((profile) => profile.id), ['frontend-engineering']);
+});
+
+test('compiles a reviewable work order from role deltas and references without project bodies or implicit write grants', () => {
+  const { teamOsHome, projectRoot } = fixture();
+  const result = compileTeamOsWorkOrder({ configuredHome: teamOsHome }, {
+    projectId: 'sample',
+    roleId: 'delivery-engineer',
+    capabilityProfileIds: ['frontend-engineering'],
+    outcome: '在现有入口交付一个可验证结果',
+    nonGoals: ['不新增任务系统'],
+    acceptance: ['现有入口可观察结果'],
+    stopConditions: ['超过硬止损或边界改变'],
+    targetMinutes: 60,
+    hardStopMinutes: 120,
+    localWrite: true,
+    locale: 'zh-CN'
+  });
+  assert.equal(result.ok, true);
+  assert.match(result.prompt, /Team OS 工作单（TOS3）/);
+  assert.match(result.prompt, /frontend-engineering/);
+  assert.match(result.prompt, /AGENTS\.md/);
+  assert.match(result.prompt, /角色合同（不等于本任务授权）/);
+  assert.equal(result.prompt.includes('PRIVATE-BODY-MUST-NOT-CROSS'), false);
+  assert.deepEqual(result.resultCard.authorization, {
+    localWrite: true, remoteWrite: false, destructive: false
+  });
+  assert.deepEqual(result.resultCard.scope.write, [projectRoot]);
+  assert.deepEqual(result.resultCard.acceptance, ['现有入口可观察结果']);
+  assert.deepEqual(result.resultCard.budget, { targetMinutes: 60, hardStopMinutes: 120 });
+  assert.deepEqual(result.resultCard.stopConditions, ['超过硬止损或边界改变']);
+  assert.equal(result.promptBytes, Buffer.byteLength(result.prompt, 'utf8'));
+});
+
+test('requires acceptance and stop conditions and rejects an inverted time budget', () => {
+  const { teamOsHome } = fixture();
+  const missing = compileTeamOsWorkOrder({ configuredHome: teamOsHome }, {
+    projectId: 'sample', roleId: 'delivery-engineer', capabilityProfileIds: [], outcome: 'test',
+    acceptance: [], stopConditions: []
+  });
+  assert.equal(missing.ok, false);
+  assert.match(missing.error.message, /acceptance must contain at least one item/);
+  const inverted = compileTeamOsWorkOrder({ configuredHome: teamOsHome }, {
+    projectId: 'sample', roleId: 'delivery-engineer', capabilityProfileIds: [], outcome: 'test',
+    acceptance: ['pass'], stopConditions: ['stop'], targetMinutes: 120, hardStopMinutes: 60
+  });
+  assert.equal(inverted.ok, false);
+  assert.match(inverted.error.message, /hardStopMinutes/);
+
+  const defaultAuthorization = compileTeamOsWorkOrder({ configuredHome: teamOsHome }, {
+    projectId: 'sample', roleId: 'delivery-engineer', capabilityProfileIds: [], outcome: 'test',
+    acceptance: ['pass'], stopConditions: ['stop']
+  });
+  assert.equal(defaultAuthorization.ok, true);
+  assert.deepEqual(defaultAuthorization.resultCard.authorization, {
+    localWrite: false, remoteWrite: false, destructive: false
+  });
+  assert.deepEqual(defaultAuthorization.resultCard.scope.write, []);
+});
+
+test('rejects unknown TOS3 roles and capability profiles explicitly', () => {
+  const { teamOsHome } = fixture();
+  const unknownRole = compileTeamOsWorkOrder({ configuredHome: teamOsHome }, {
+    projectId: 'sample', roleId: 'missing-role', capabilityProfileIds: [], outcome: 'test'
+  });
+  assert.equal(unknownRole.ok, false);
+  assert.match(unknownRole.error.message, /role does not exist/);
+  const unknownCapability = compileTeamOsWorkOrder({ configuredHome: teamOsHome }, {
+    projectId: 'sample', roleId: 'delivery-engineer', capabilityProfileIds: ['missing-capability'], outcome: 'test'
+  });
+  assert.equal(unknownCapability.ok, false);
+  assert.match(unknownCapability.error.message, /capability profile does not exist/);
 });
 
 test('missing Team OS degrades explicitly without throwing', () => {

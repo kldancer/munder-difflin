@@ -18,13 +18,24 @@ test('TOS snapshot is wired main -> preload -> existing Command Center', () => {
   assert.match(commandCenter, /tab === 'projects'.*<TeamOsProjectsPanel/s);
 });
 
+test('TOS3 catalog and compiler stay behind explicit IPC contracts', () => {
+  const main = source('src/main/index.ts');
+  const preload = source('src/preload/index.ts');
+  assert.match(main, /ipcMain\.handle\('teamOs:preparationCatalog'/);
+  assert.match(main, /ipcMain\.handle\('teamOs:compileWorkOrder'/);
+  assert.match(preload, /teamOsPreparationCatalog:.*teamOs:preparationCatalog/s);
+  assert.match(preload, /teamOsCompileWorkOrder:.*teamOs:compileWorkOrder/s);
+});
+
 test('project overview states its read-only and no-body-copy boundaries', () => {
   const panel = source('src/renderer/src/components/TeamOsProjectsPanel.tsx');
   const resources = source('src/shared/i18n/resources/tos.ts');
   assert.match(panel, /teamOsSnapshot\(\)/);
   assert.match(resources, /只读投影/);
-  assert.match(resources, /不会把文档正文、提示词、Transcript、任务或密钥复制进 Munder/);
-  assert.match(resources, /结果卡与自动路由属于 TOS3/);
+  assert.match(resources, /不会把项目文档正文、既有 Prompt、Transcript、任务或密钥复制进 Munder/);
+  assert.match(resources, /只生成当前显式工作单草稿/);
+  assert.match(resources, /TOS3 工作单是显式草稿/);
+  assert.match(resources, /自动路由和推断执行状态仍不在当前范围/);
   assert.doesNotMatch(panel, /writeFile|remove|delete|dispatch|spawn/i);
 });
 
@@ -34,4 +45,12 @@ test('Team OS home is configurable live without using the destructive harness-ho
   assert.match(settings, /updateConfig\(\{ teamOsHome: undefined \}\)/);
   const teamOsBlock = settings.slice(settings.indexOf('const pickTeamOsHome'), settings.indexOf('const useDefaultTeamOsHome'));
   assert.doesNotMatch(teamOsBlock, /changeHome\(|resetAll\(|relaunch|kill/i);
+});
+
+test('TOS3 preview fills the existing Michael dispatch box but never sends automatically', () => {
+  const composer = source('src/renderer/src/components/TeamOsWorkComposer.tsx');
+  assert.match(composer, /teamOsCompileWorkOrder/);
+  assert.match(composer, /requestDispatchSeed\(compiled\.prompt\)/);
+  assert.match(composer, /requestCommandCenterTab\('floor'\)/);
+  assert.doesNotMatch(composer, /hiveSend|enqueueMessage|spawnPty/);
 });
