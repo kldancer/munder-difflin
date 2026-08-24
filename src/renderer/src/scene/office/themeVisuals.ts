@@ -1,5 +1,36 @@
-import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import { Container, Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
+import type { OcclusionRect } from './TiledMapRenderer';
 import type { ThemeConfig } from './themeRegistry';
+
+/** Build only independently-authored front-face clips. Unlike the removed
+ * collision-crop path, these rectangles are small visible occlusion strips and
+ * carry their own Y baselines; floor/collider volumes never become foreground. */
+export function createThemeForegroundOccluders(
+  backgroundTexture: Texture,
+  occlusionRects: ReadonlyArray<OcclusionRect>,
+  mapPixelWidth: number,
+  mapPixelHeight: number,
+): Sprite[] {
+  const scaleX = backgroundTexture.frame.width / mapPixelWidth;
+  const scaleY = backgroundTexture.frame.height / mapPixelHeight;
+  return occlusionRects.map((rect) => {
+    const frame = new Rectangle(
+      Math.round(rect.x * scaleX),
+      Math.round(rect.y * scaleY),
+      Math.max(1, Math.round(rect.width * scaleX)),
+      Math.max(1, Math.round(rect.height * scaleY)),
+    );
+    const sprite = new Sprite(new Texture({ source: backgroundTexture.source, frame }));
+    sprite.label = `theme-foreground:${rect.name}`;
+    sprite.eventMode = 'none';
+    sprite.position.set(rect.x, rect.y);
+    sprite.width = rect.width;
+    sprite.height = rect.height;
+    sprite.zIndex = rect.baseline;
+    sprite.roundPixels = true;
+    return sprite;
+  });
+}
 
 /**
  * A deliberately tiny visual layer for skins. It is procedural so a theme

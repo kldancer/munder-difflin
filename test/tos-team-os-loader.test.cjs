@@ -11,6 +11,7 @@ const {
   compileTeamOsWorkOrder,
   loadTeamOsPreparationCatalog,
   loadTeamOsSnapshot,
+  resolveProjectWorkspace,
   resolveTeamOsHome,
   TEAM_OS_LIMITS
 } = loadTs('src/main/teamOs.ts');
@@ -27,6 +28,21 @@ function fixture() {
   file(path.join(projectRoot, 'AGENTS.md'), '# rules\nPRIVATE-BODY-MUST-NOT-CROSS');
   file(path.join(projectRoot, 'docs', 'workflow.md'), '# workflow');
   fs.mkdirSync(path.join(projectRoot, '.work', 'gates'), { recursive: true });
+  const serviceRoot = path.join(outer, 'service');
+  fs.mkdirSync(serviceRoot, { recursive: true });
+  file(path.join(projectRoot, '.agents', 'config', 'workspaces.json'), JSON.stringify({
+    version: 1,
+    designDocumentation: {
+      managedWorkspaces: ['installer', 'service'],
+      referenceOnlyWorkspaces: [],
+      excludedWorkspaceGroups: { tools: ['tool'] }
+    },
+    workspaces: [
+      { name: 'installer', path: projectRoot, kind: 'orchestration', docTestTokens: ['PRIVATE-TOKEN'] },
+      { name: 'service', path: serviceRoot, kind: 'platform-service' },
+      { name: 'tool', path: path.join(outer, 'missing-tool'), kind: 'tool', lifecycle: 'historical' }
+    ]
+  }));
   file(path.join(teamOsHome, 'projects', 'registry.json'), JSON.stringify({
     version: 1,
     projects: [{ id: 'sample', name: 'Sample', adapter: 'projects/adapters/sample.yaml', enabled: true }]
@@ -34,6 +50,7 @@ function fixture() {
   file(path.join(teamOsHome, 'projects', 'adapters', 'sample.yaml'), [
     'version: 1', 'id: sample', 'name: Sample', `root: ${projectRoot}`, 'mode: read-only',
     'authority:', '  agents: AGENTS.md', '  workflow: docs/workflow.md',
+    'machine:', '  workspaces: .agents/config/workspaces.json',
     'evidence:', '  gateReceipts: .work/gates',
     'constraints:', '  copyAuthorityDocuments: false', '  allowGitMutation: false'
   ].join('\n'));
@@ -54,7 +71,7 @@ function fixture() {
     '    defaultMode: overlay'
   ].join('\n'));
   file(path.join(teamOsHome, 'templates', 'outcome-card.yaml'), 'version: 3\nid: example\n');
-  return { outer, teamOsHome, projectRoot };
+  return { outer, teamOsHome, projectRoot, serviceRoot };
 }
 
 test('resolves configured, environment, and default homes without hardcoding a user path', () => {
@@ -76,11 +93,39 @@ test('loads only bounded project metadata and never copies authority content', (
   assert.equal(result.loadedAt, '1970-01-01T00:00:00.000Z');
   assert.equal(result.projects[0].status, 'ready');
   assert.equal(result.projects[0].root, projectRoot);
-  assert.equal(result.projects[0].references.length, 3);
+  assert.equal(result.projects[0].references.length, 4);
   assert.equal(result.projects[0].references.every((ref) => ref.exists), true);
   assert.deepEqual(result.projects[0].constraints, { copyAuthorityDocuments: false, allowGitMutation: false });
   assert.equal(JSON.stringify(result).includes('PRIVATE-BODY-MUST-NOT-CROSS'), false);
   assert.deepEqual(result.policy, { readOnly: true, contentCopied: false, autoRouting: false, terminalFallback: true });
+});
+
+test('resolves project workspaces on demand without copying planner-only fields', () => {
+  const { teamOsHome, serviceRoot } = fixture();
+  const all = resolveProjectWorkspace({ configuredHome: teamOsHome }, 'sample');
+  assert.equal(all.ok, true);
+  assert.equal(all.workspaces.length, 3);
+  assert.deepEqual(all.workspaces.map((workspace) => [workspace.key, workspace.mode]), [
+    ['installer', 'managed'], ['service', 'managed'], ['tool', 'excluded']
+  ]);
+  assert.equal(JSON.stringify(all).includes('PRIVATE-TOKEN'), false);
+  const selected = resolveProjectWorkspace({ configuredHome: teamOsHome }, 'sample', 'service');
+  assert.equal(selected.ok, true);
+  assert.deepEqual(selected.workspaces.map((workspace) => workspace.path), [serviceRoot]);
+});
+
+test('workspace resolver rejects unknown keys and duplicate workspace facts', () => {
+  const { teamOsHome, projectRoot } = fixture();
+  const unknown = resolveProjectWorkspace({ configuredHome: teamOsHome }, 'sample', 'absent');
+  assert.equal(unknown.ok, false);
+  assert.match(unknown.error.message, /does not exist/);
+  const registryPath = path.join(projectRoot, '.agents', 'config', 'workspaces.json');
+  const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
+  registry.workspaces.push({ name: 'service', path: projectRoot, kind: 'duplicate' });
+  fs.writeFileSync(registryPath, JSON.stringify(registry));
+  const duplicate = resolveProjectWorkspace({ configuredHome: teamOsHome }, 'sample');
+  assert.equal(duplicate.ok, false);
+  assert.match(duplicate.error.message, /duplicate workspace key/);
 });
 
 test('loads the bounded TOS3 role catalog and template contract', () => {

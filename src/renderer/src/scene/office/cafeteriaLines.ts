@@ -13,6 +13,7 @@ import type { OfficeCharacterName } from './cast';
 
 /** Where an agent is lingering — picks a contextual line pool. */
 export type BreakSpot = 'coffee' | 'vending' | 'snack' | 'table';
+export type AmbientLocale = 'zh-CN' | 'en';
 
 const pick = <T,>(arr: readonly T[], seed: number): T =>
   arr[((seed % arr.length) + arr.length) % arr.length];
@@ -57,6 +58,12 @@ const TABLE: readonly string[] = [
 const SPOT_POOL: Record<BreakSpot, readonly string[]> = {
   coffee: COFFEE, vending: VENDING, snack: SNACK, table: TABLE,
 };
+const SPOT_POOL_ZH: Record<BreakSpot, readonly string[]> = {
+  coffee: ['先补充一点咖啡因', '今天的咖啡不错', '谁看见我的杯子了？', '休息两分钟再继续'],
+  vending: ['自动售货机又卡住了', '补充一点能量', '选个小零食', '这次就选它'],
+  snack: ['简单吃一点', '是谁吃完了零食？', '第二顿早餐', '给大脑补充能量'],
+  table: ['休息五分钟', '刚才的 Gate 进展如何？', '看一下会议记录', '整理一下思路'],
+};
 
 // ─── character flavour — overrides the generic pool when present ─────────────
 
@@ -81,7 +88,8 @@ const BY_CHARACTER: Partial<Record<OfficeCharacterName, readonly string[]>> = {
 /** A solo break-room line. Character flavour ~60% of the time, else the line
  *  fits the spot the agent is standing at. `seed` keeps it deterministic per
  *  call site (avoids Math.random, which Pixi/Electron CSP-safe code prefers). */
-export function pickSoloLine(character: OfficeCharacterName, spot: BreakSpot, seed: number): string {
+export function pickSoloLine(character: OfficeCharacterName, spot: BreakSpot, seed: number, locale: AmbientLocale = 'en'): string {
+  if (locale === 'zh-CN') return pick(SPOT_POOL_ZH[spot], seed);
   const flavour = BY_CHARACTER[character];
   if (flavour && seed % 5 < 3) return pick(flavour, Math.floor(seed / 5));
   return pick(SPOT_POOL[spot], seed);
@@ -212,6 +220,13 @@ const TWSS_EXCHANGES: readonly Exchange[] = [
 
 // Everything any table-mate pair can draw from.
 const PAIR_POOL: readonly Exchange[] = [...EXCHANGES, ...TWSS_EXCHANGES];
+const PAIR_POOL_ZH: readonly Exchange[] = [
+  ['当前 Gate 通过了吗？', '目标测试已经绿了。', '那就继续收敛。'],
+  ['这个改动范围大吗？', '写集合很小。', '很好，保持简单。'],
+  ['要不要再开个会？', '先把证据跑出来。', '同意。'],
+  ['构建怎么样？', '正在跑。', '有结果记得更新收据。'],
+  ['这项工作谁负责？', '已经分配到对应角色。', '那就不要重复改同一个文件。'],
+];
 
 // Keyed off the SPEAKER so, when the right character sits down first, they get
 // to open with their signature bit.
@@ -230,7 +245,8 @@ const KEYED_EXCHANGES: Partial<Record<OfficeCharacterName, Exchange>> = {
 
 /** A multi-beat exchange for two agents sharing a table. Beats alternate:
  *  index 0 = `speaker`, 1 = the table-mate, 2 = speaker, … */
-export function pickExchange(speaker: OfficeCharacterName, seed: number): Exchange {
+export function pickExchange(speaker: OfficeCharacterName, seed: number, locale: AmbientLocale = 'en'): Exchange {
+  if (locale === 'zh-CN') return pick(PAIR_POOL_ZH, seed);
   const keyed = KEYED_EXCHANGES[speaker];
   if (keyed && seed % 4 === 0) return keyed;
   return pick(PAIR_POOL, seed);

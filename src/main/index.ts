@@ -63,6 +63,7 @@ import { ControlRegistry } from './control';
 import { fetchHireManifest, readHireManifestFile } from './hire';
 import { parseHireDeepLink, type HireManifest } from '../shared/hire';
 import { ClosingTimeController } from './closingTime';
+import { evaluateOpsStandup } from './opsStandup';
 import {
   inferAgentProvider,
   isClaudeProvider,
@@ -70,6 +71,8 @@ import {
   buildOpenCodeRuntimeConfig,
   geminiApiKeySystemSettings,
   providerPreset,
+  defaultCommandForProvider,
+  autoModeFlagForProvider,
   installInfoForProvider,
   type AgentProvider
 } from '../shared/agentProvider';
@@ -100,8 +103,15 @@ import {
   compileTeamOsWorkOrder,
   loadTeamOsPreparationCatalog,
   loadTeamOsSnapshot,
+  resolveProjectWorkspace,
   type TeamOsWorkOrderRequest
 } from './teamOs';
+import {
+  TeamOsPlanCoordinator,
+  listPlanningStates,
+  startFromConclusion
+} from './teamOsPlanning';
+import { formatTeamOsSpawnCommand, type TeamOsAllocationDecision } from './teamOsPlan';
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
 
@@ -260,6 +270,91 @@ const hive = new HiveManager(
   },
   () => readConfig().locale
 );
+async function provisionTeamOsAgent(
+  decision: TeamOsAllocationDecision,
+  freshReuse = false,
+): Promise<{ ok: boolean; error?: string }> {
+  if (freshReuse) {
+    // Preserve the role identity, mailbox, memory and previous Session record,
+    // but replace the idle CLI process so an unrelated plan gets a clean
+    // context. PtyManager's stale-exit guard makes kill+same-id spawn atomic to
+    // the renderer and intentionally avoids lifecycle teardown here.
+    try { liveWebContents()?.send(`pty:relaunch:${decision.agentId}`); } catch { /* renderer may be restarting */ }
+    const killed = ptyManager.kill(decision.agentId);
+    if (!killed.ok) return killed;
+  }
+  const config = readConfig();
+  const registry = hive.registry();
+  const god = registry.godId ? registry.agents[registry.godId] : undefined;
+  const provider = inferAgentProvider(undefined, decision.provider ?? god?.provider ?? config.godProvider ?? 'codex');
+  const preset = providerPreset(provider);
+  const command = defaultCommandForProvider(provider, config.defaultCommand);
+  if (!command) return { ok: false, error: `no CLI command is configured for ${provider}` };
+  // PtyManager takes an executable plus an argv array. `commandForAutoMode`
+  // intentionally returns a display-ready command string for renderer consumers;
+  // passing that combined string here makes node-pty look for a binary literally
+  // named `codex --dangerously-…` and the worker exits immediately.
+  const autoArgs = config.autoMode
+    ? autoModeFlagForProvider(provider).trim().split(/\s+/).filter(Boolean)
+    : [];
+  const workerModel = config.providerDefaultModels?.[provider] ?? preset.recommendedWorkerModel;
+  const modelArgs = preset.supportsModel && preset.modelFlag && workerModel
+    ? [preset.modelFlag, workerModel]
+    : [];
+  const launchArgs = [...autoArgs, ...modelArgs];
+  const result = await spawnAgentCore({
+    id: decision.agentId,
+    cwd: decision.cwd,
+    command,
+    args: launchArgs,
+    provider,
+    hive: {
+      id: decision.agentId,
+      name: decision.roleLabel,
+      provider,
+      role: decision.roleId,
+      capabilities: [],
+      replyLanguage: config.locale,
+      cwd: decision.cwd
+    }
+  }, null);
+  if (result.ok) {
+    try {
+      liveWebContents()?.send('hive:agentSpawned', {
+        id: decision.agentId,
+        name: decision.roleLabel,
+        provider,
+        cwd: result.worktreePath ?? result.cwd ?? decision.cwd,
+        // Persist the exact executable + argv used here. Saving only the bare
+        // executable made restart restore drop Luna and auto-mode even though
+        // the live first-run PTY had both flags.
+        command: formatTeamOsSpawnCommand(command, launchArgs),
+        model: workerModel,
+        role: decision.roleId,
+        worktreePath: result.worktreePath
+      });
+    } catch { /* renderer may be restarting */ }
+  }
+  return result;
+}
+const teamOsPlanCoordinator = new TeamOsPlanCoordinator({
+  teamOsOptions: () => {
+    const config = readConfig();
+    return { configuredHome: config.teamOsHome, environmentHome: process.env.MUNDER_TEAM_OS_HOME };
+  },
+  harnessHome: () => readConfig().harnessHome ?? undefined,
+  registry: () => hive.registry(),
+  tasks: () => hive.tasks(),
+  addTask: (task) => hive.addTask(task),
+  send: (partial, from) => hive.send(partial, from),
+  spawn: (decision) => provisionTeamOsAgent(decision),
+  reuse: (decision) => decision.sessionMode === 'continue'
+    ? Promise.resolve({ ok: true })
+    : provisionTeamOsAgent(decision, true),
+  emit: (event) => {
+    try { liveWebContents()?.send('teamOs:planState', event); } catch { /* renderer may be restarting */ }
+  }
+});
 // #7C — operator control state (pause/gate/steer/halt), read by the HookServer
 // when deciding hook returns.
 const control = new ControlRegistry();
@@ -628,6 +723,33 @@ function clearMissionTimers(): void {
   missionTimers.clear();
 }
 
+/** Main-process-only preflight for the hourly standup. It reads compact machine
+ * facts, never transcripts or memory, and decides whether a model turn has any
+ * actionable value. */
+function opsStandupPreflight(previousFingerprint?: string): ReturnType<typeof evaluateOpsStandup> {
+  const ledger = hive.tasks() as { tasks?: HiveTask[] };
+  const tasks = Array.isArray(ledger.tasks) ? ledger.tasks : [];
+  const reg = hive.registry();
+  return evaluateOpsStandup({
+    tasks: tasks.map((task) => ({
+      id: task.id,
+      status: task.status,
+      assignee: task.assignee ?? null,
+      openHumanQuestions: (task.humanQA ?? []).filter((qa) => !qa.a).length,
+    })),
+    agents: Object.entries(reg.agents)
+      .filter(([, agent]) => !agent.archived)
+      .map(([id, agent]) => ({
+        id,
+        role: agent.role ?? (agent.isGod ? 'orchestrator' : 'agent'),
+        status: agent.status,
+        isGod: !!agent.isGod,
+        breaker: breaker.levelFor(id),
+        actionableInbox: hive.inbox(id).filter((message) => !SYSTEM_SENDERS.has(message.from)).length,
+      })),
+  }, previousFingerprint);
+}
+
 /** Rebuild the scheduler from persisted config: clear every existing timer,
  *  then arm each enabled mission honoring its lastFiredAt — a setTimeout for the
  *  time remaining until its next due fire, which then settles into a steady
@@ -645,13 +767,28 @@ function syncMissions(): void {
     if (m.kind === 'heartbeat') { armHeartbeat(m); continue; }
     const fire = (): void => {
       try {
+        let standupFingerprint: string | undefined;
+        let standupReasons: string[] = [];
+        let shouldDispatch = true;
+        if (m.id === OPS_STANDUP_MISSION.id && hive.enabled()) {
+          const decision = opsStandupPreflight(readConfig().opsStandupFingerprint);
+          standupFingerprint = decision.fingerprint;
+          standupReasons = decision.reasons;
+          shouldDispatch = decision.shouldDispatch;
+          if (!shouldDispatch) {
+            console.info('[missions] ops standup checked: no semantic change; model wake skipped');
+          }
+        }
         // A 'compact' maintenance mission (maint-1) is compaction-ONLY: it carries
         // no dispatch body/target, so skip the hive.send and just fire auto-compact.
         // Gate on `kind!=='compact'` ALONE — that already excludes the compact mission;
         // we deliberately do NOT add `&& m.body`, so other (dispatch) missions keep
         // their prior behaviour, including the historical empty-body send (Pam N1).
-        if (m.kind !== 'compact' && hive.enabled()) {
-          hive.send({ to: m.to, act: 'request', subject: m.label, body: m.body }, 'scheduler');
+        if (m.kind !== 'compact' && hive.enabled() && shouldDispatch) {
+          const body = standupReasons.length
+            ? `${m.body}\n\nMain-process preflight: ${standupReasons.join('; ')}.`
+            : m.body;
+          hive.send({ to: m.to, act: 'request', subject: m.label, body }, 'scheduler');
         }
         // Auto-compact: do NOT jam /compact into busy terminals. Hand it to the
         // renderer, which queues a /compact per agent (deduped — never two at
@@ -670,7 +807,10 @@ function syncMissions(): void {
         const next = current.map((x) =>
           x.id === m.id ? { ...x, lastFiredAt: Date.now() } : x
         );
-        writeConfig({ missions: next });
+        writeConfig({
+          missions: next,
+          ...(m.id === OPS_STANDUP_MISSION.id ? { opsStandupFingerprint: standupFingerprint } : {}),
+        });
         // Let the SCHEDULES panel refresh its "last fired" without a reload (#2.3).
         try { liveWebContents()?.send('missions:updated'); } catch { /* window gone */ }
       } catch (e) {
@@ -1156,6 +1296,7 @@ function writeFleetSnapshot(): void {
           id,
           name: a.name,
           role: a.role ?? (a.isGod ? 'orchestrator' : 'agent'),
+          status: a.status,
           cwd: a.cwd,
           isGod: !!a.isGod,
           breaker: breaker.levelFor(id),
@@ -3208,6 +3349,34 @@ ipcMain.handle('teamOs:preparationCatalog', () => {
   });
 });
 
+ipcMain.handle('teamOs:workspaces', (_evt, projectId: unknown, workspaceKey: unknown) => {
+  if (typeof projectId !== 'string' || (workspaceKey != null && typeof workspaceKey !== 'string')) {
+    return { ok: false, projectId: String(projectId ?? ''), registryPath: null, workspaces: [], error: {
+      code: 'WORKSPACE_REQUEST_INVALID', message: 'projectId and workspaceKey must be strings'
+    } };
+  }
+  const config = readConfig();
+  return resolveProjectWorkspace({
+    configuredHome: config.teamOsHome,
+    environmentHome: process.env.MUNDER_TEAM_OS_HOME
+  }, projectId, workspaceKey as string | null | undefined);
+});
+
+ipcMain.handle('teamOs:startFromConclusion', (_evt, projectId: unknown) => {
+  if (projectId != null && typeof projectId !== 'string') {
+    return { ok: false, error: { code: 'PLAN_START_FAILED', message: 'projectId must be a string' } };
+  }
+  const config = readConfig();
+  return startFromConclusion({
+    options: { configuredHome: config.teamOsHome, environmentHome: process.env.MUNDER_TEAM_OS_HOME },
+    harnessHome: config.harnessHome ?? undefined,
+    projectId: typeof projectId === 'string' && projectId ? projectId : undefined,
+    localWrite: true
+  });
+});
+
+ipcMain.handle('teamOs:planStates', () => listPlanningStates(readConfig().harnessHome ?? undefined));
+
 ipcMain.handle('teamOs:compileWorkOrder', (_evt, payload: unknown) => {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return { ok: false, error: { code: 'WORK_ORDER_INVALID', message: 'work order request must be an object' } };
@@ -4846,6 +5015,7 @@ app.whenReady().then(() => {
   initAutoUpdater(() => liveWebContents());
   // Bootstrap the hive (if harnessHome is configured) and start the message router.
   bootstrapHiveServices();
+  teamOsPlanCoordinator.start();
   // Survive sleep/lock. macOS freezes libuv timers during true system sleep, so a
   // locked/idle/slept Mac stops firing schedules and can wedge PTYs. On wake we
   // re-arm the scheduler (catching up missed missions ONCE) + beats + keep-awake,
@@ -4908,6 +5078,7 @@ app.on('window-all-closed', () => {
 // against a short timeout, then re-enter quit with the latch set.
 let analyticsFlushed = false;
 app.on('will-quit', (e) => {
+  teamOsPlanCoordinator.stop();
   if (analyticsFlushed) return;
   analyticsFlushed = true;
   e.preventDefault();

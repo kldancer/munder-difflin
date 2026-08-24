@@ -10,6 +10,7 @@ import { freeflowRecorder, useFreeflow } from '@/freeflow/recorder';
 import { useTerminalFontSize } from './terminalFontSize';
 
 const EMPTY_QUEUE: QueuedMessage[] = [];
+const START_FROM_CONCLUSION = '按结论开始推进';
 
 /** A file/image attached to the draft. Travels to the agent as a PATH it Reads. */
 interface Attachment {
@@ -75,6 +76,8 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
   // persist in the store, attachments deliberately don't carry over).
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  const [planStartError, setPlanStartError] = useState('');
+  const [startingPlan, setStartingPlan] = useState(false);
 
   const addAttachments = (incoming: Attachment[]) =>
     setAttachments((prev) => {
@@ -129,15 +132,38 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
 
   const canSend = !!text.trim() || attachments.length > 0;
 
-  const queueIt = () => {
+  const queueIt = async (overrideText?: string) => {
+    const effectiveText = overrideText ?? text;
+    const startsPlan = agent.isGod && attachments.length === 0 && effectiveText.trim() === START_FROM_CONCLUSION;
+    if (startsPlan) {
+      setStartingPlan(true);
+      setPlanStartError('');
+      try {
+        const result = await window.cth.teamOsStartFromConclusion();
+        if (!result.ok) {
+          setPlanStartError(result.error.message);
+          return;
+        }
+        // This prompt enters Michael's existing queue and therefore the same
+        // CLI Session that holds the discussion. Main creates no second model.
+        enqueueMessage(agent.id, result.prompt);
+        setText('');
+        setAttachments([]);
+      } catch (error) {
+        setPlanStartError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setStartingPlan(false);
+      }
+      return;
+    }
     if (!canSend) return;
     // Prepend an "Attached files:" block using the same path-based convention as
     // the Slack inbound path (useHive.ts) so agents Read the files directly.
     const body = attachments.length
-      ? (text.trim()
-          ? `${text}\n\nAttached files:\n`
+      ? (effectiveText.trim()
+          ? `${effectiveText}\n\nAttached files:\n`
           : 'Attached files:\n') + attachments.map((a) => `- ${a.path} (${a.name})`).join('\n')
-      : text;
+      : effectiveText;
     enqueueMessage(agent.id, body);
     setText('');
     setAttachments([]);
@@ -146,7 +172,7 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      queueIt();
+      void queueIt();
     }
   };
 
@@ -363,6 +389,16 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
             narrow sidebar wraps the buttons onto a second row instead of
             pushing Send off-screen. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, rowGap: 6, flexWrap: 'wrap', minWidth: 0 }}>
+          {agent.isGod && (
+            <PixelButton
+              variant="secondary"
+              size="sm"
+              onClick={() => void queueIt(START_FROM_CONCLUSION)}
+              disabled={startingPlan}
+            >
+              {startingPlan ? '正在建立计划…' : START_FROM_CONCLUSION}
+            </PixelButton>
+          )}
           <span style={{ flex: 1 }} />
           <PixelButton variant="secondary" size="sm" onClick={pickFiles}>
             <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
@@ -370,12 +406,17 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
             </span>
           </PixelButton>
           {freeflowEnabled && <FreeFlowButton agentId={agent.id} hasGroqKey={hasGroqKey} />}
-          <PixelButton variant="primary" size="sm" onClick={queueIt} disabled={!canSend}>
+          <PixelButton variant="primary" size="sm" onClick={() => void queueIt()} disabled={!canSend || startingPlan}>
             <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
               {t('queue.send')} <Icon name="arrow-right" />
             </span>
           </PixelButton>
         </div>
+        {planStartError && (
+          <div role="alert" style={{ color: 'var(--cth-coral)', fontSize: 11, lineHeight: '15px' }}>
+            无法开始自动规划：{planStartError}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -31,11 +31,24 @@ export const tos_en = {
       noReferences: 'No references declared.',
       noConstraints: 'No constraints declared.',
       readOnly: 'Read-only projection',
-      noBodies: 'No project document bodies, existing prompts, transcripts, tasks, or secrets are copied into Munder; only the current explicit work-order draft is generated.',
-      later: 'TOS3 work orders are explicit drafts. Automatic routing and inferred execution state remain out of scope.',
+      noBodies: 'Project document bodies, transcripts, and secrets stay at their authority paths; Michael reads only the references needed for the current plan.',
+      later: 'Planning is conversational; allocation and Gate status are validated by the deterministic coordinator.',
       loadFailed: 'Could not load Team OS snapshot.',
       configHelp: 'Independent from the harness home. Changing this path does not restart agents or sessions.',
       useDefault: 'use default'
+    },
+    flow: {
+      workspaces: 'workspaces', discuss: 'discuss with Michael', start: 'start from conclusion', starting: 'starting…',
+      workspaceTitle: '{{project}} workspace index', workspaceSearch: 'search key, kind, or path', noWorkspace: 'No matching workspaces.',
+      discussPrompt: 'I want to discuss the next work for {{project}} ({{id}}). First understand my idea and help me reach a conclusion; do not start implementation yet.',
+      noMichael: 'Michael is not available.',
+      planTitle: 'RECENT CONVERSATIONAL PLANS', noPlans: 'No plan has been started yet.',
+      taskSummary: '{{done}}/{{total}} done · {{active}} active',
+      mode: { managed: 'managed', 'reference-only': 'reference', excluded: 'excluded', unclassified: 'unclassified' },
+      phase: {
+        planning: 'planning', ready: 'ready', executing: 'executing', verifying: 'verifying',
+        'awaiting-human': 'awaiting you', blocked: 'blocked', completed: 'completed', failed: 'failed', stopped: 'stopped'
+      }
     },
     prepare: {
       open: 'prepare work',
@@ -102,11 +115,24 @@ export const tos_zh = {
       noReferences: '未声明引用。',
       noConstraints: '未声明约束。',
       readOnly: '只读投影',
-      noBodies: '不会把项目文档正文、既有 Prompt、Transcript、任务或密钥复制进 Munder；只生成当前显式工作单草稿。',
-      later: 'TOS3 工作单是显式草稿；自动路由和推断执行状态仍不在当前范围。',
+      noBodies: '项目文档正文、Transcript 与密钥留在各自权威路径；Michael 只按当前计划读取必要引用。',
+      later: '规划由对话产生；角色分配与 Gate 状态由确定性协调器校验并展示。',
       loadFailed: '无法加载 Team OS 快照。',
       configHelp: '该目录与蜂巢主目录相互独立；切换路径不会重启 Agent 或 Session。',
       useDefault: '恢复默认'
+    },
+    flow: {
+      workspaces: '工作区', discuss: '与 Michael 讨论', start: '按结论开始推进', starting: '正在启动…',
+      workspaceTitle: '{{project}} 工作区索引', workspaceSearch: '搜索 key、类型或路径', noWorkspace: '没有匹配的工作区。',
+      discussPrompt: '我想和你讨论“{{project}}”（{{id}}）接下来的工作。先理解我的想法并帮助我形成结论，暂时不要开始实施。',
+      noMichael: 'Michael 当前不可用。',
+      planTitle: '最近的对话式计划', noPlans: '尚未启动对话式计划。',
+      taskSummary: '已完成 {{done}}/{{total}} · 执行中 {{active}}',
+      mode: { managed: '受管', 'reference-only': '仅引用', excluded: '排除', unclassified: '未分类' },
+      phase: {
+        planning: '规划中', ready: '已就绪', executing: '执行中', verifying: '验证中',
+        'awaiting-human': '等待你的决定', blocked: '已阻塞', completed: '已完成', failed: '失败', stopped: '已停止'
+      }
     },
     prepare: {
       open: '准备工作',

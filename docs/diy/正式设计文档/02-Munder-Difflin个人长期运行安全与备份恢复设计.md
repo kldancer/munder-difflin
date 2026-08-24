@@ -2,7 +2,7 @@
 
 > 本文定义 Wave 5 后个人本机长期运行的依赖、外部入口、Skills 与本地数据恢复合同。它不覆盖商业发行、签名、公证、应用商店或自动更新服务。
 
-产品总体架构见 [多 Agent 角色办公室架构与运行机制](01-Munder-Difflin多Agent角色办公室架构与运行机制.md)；后续增强的取舍与 Gate 见 [Wave 6 及后续设计结论与实施规划](../实施规划/03-Munder-Difflin-Wave-6及后续设计结论与实施规划.md)。
+产品总体架构见 [多 Agent 角色办公室架构与运行机制](01-Munder-Difflin多Agent角色办公室架构与运行机制.md)；Codex 原生运行桥的权限、恢复、兼容和分阶段 Gate 见 [Codex App Server 原生运行桥升级实施规划](../实施规划/05-Munder-Difflin-Codex-App-Server原生运行桥升级实施规划.md)。
 
 ## 1. 稳定边界
 

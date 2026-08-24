@@ -27,16 +27,44 @@ test('TOS3 catalog and compiler stay behind explicit IPC contracts', () => {
   assert.match(preload, /teamOsCompileWorkOrder:.*teamOs:compileWorkOrder/s);
 });
 
-test('project overview states its read-only and no-body-copy boundaries', () => {
+test('project overview exposes conversational planning without copying authority bodies', () => {
   const panel = source('src/renderer/src/components/TeamOsProjectsPanel.tsx');
   const resources = source('src/shared/i18n/resources/tos.ts');
   assert.match(panel, /teamOsSnapshot\(\)/);
+  assert.match(panel, /teamOsWorkspaces\(project\.id\)/);
+  assert.match(panel, /teamOsStartFromConclusion\(project\.id\)/);
+  assert.match(panel, /enqueueMessage\(michael\.id, result\.prompt\)/);
+  assert.match(panel, /onTeamOsPlanState/);
   assert.match(resources, /只读投影/);
-  assert.match(resources, /不会把项目文档正文、既有 Prompt、Transcript、任务或密钥复制进 Munder/);
-  assert.match(resources, /只生成当前显式工作单草稿/);
-  assert.match(resources, /TOS3 工作单是显式草稿/);
-  assert.match(resources, /自动路由和推断执行状态仍不在当前范围/);
-  assert.doesNotMatch(panel, /writeFile|remove|delete|dispatch|spawn/i);
+  assert.match(resources, /项目文档正文、Transcript 与密钥留在各自权威路径/);
+  assert.match(resources, /角色分配与 Gate 状态由确定性协调器校验并展示/);
+  assert.match(resources, /按结论开始推进/);
+  assert.doesNotMatch(panel, /writeFile|remove|delete|spawnPty/i);
+});
+
+test('start-from-conclusion is a durable same-session Michael plan lifecycle', () => {
+  const main = source('src/main/index.ts');
+  const providers = source('src/shared/agentProvider.ts');
+  const preload = source('src/preload/index.ts');
+  const planning = source('src/main/teamOsPlanning.ts');
+  const queue = source('src/renderer/src/components/MessageQueueComposer.tsx');
+  assert.match(main, /ipcMain\.handle\('teamOs:startFromConclusion'/);
+  assert.match(main, /ipcMain\.handle\('teamOs:planStates'/);
+  assert.match(preload, /teamOsStartFromConclusion:.*teamOs:startFromConclusion/s);
+  assert.match(preload, /teamOsPlanStates:.*teamOs:planStates/s);
+  assert.match(planning, /submit\.json/);
+  assert.match(planning, /validatePlanManifest/);
+  assert.match(planning, /allocatePlan/);
+  assert.match(queue, /START_FROM_CONCLUSION = '按结论开始推进'/);
+  assert.match(queue, /enqueueMessage\(agent\.id, result\.prompt\)/);
+  assert.match(providers, /recommendedOrchestratorModel: 'gpt-5\.6-sol'/);
+  assert.match(providers, /recommendedWorkerModel: 'gpt-5\.6-luna'/);
+  assert.match(main, /defaultCommandForProvider\(provider, config\.defaultCommand\)/);
+  assert.match(main, /autoModeFlagForProvider\(provider\).*split\(\/\\s\+\//s);
+  assert.match(main, /const launchArgs = \[\.\.\.autoArgs, \.\.\.modelArgs\]/);
+  assert.match(main, /args: launchArgs/);
+  assert.match(main, /formatTeamOsSpawnCommand\(command, launchArgs\)/);
+  assert.match(main, /config\.providerDefaultModels\?\.\[provider\] \?\? preset\.recommendedWorkerModel/);
 });
 
 test('Team OS home is configurable live without using the destructive harness-home flow', () => {

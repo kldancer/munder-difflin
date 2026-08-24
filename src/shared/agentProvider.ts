@@ -111,6 +111,10 @@ export interface AgentProviderPreset {
    *  model as `config.godModel ?? preset.recommendedOrchestratorModel ?? MODEL_GOD`.
    *  Advisory + user-overridable. */
   recommendedOrchestratorModel?: string;
+  /** Default for automatically provisioned execution/verification workers.
+   *  A per-provider user preference still wins. Kept separate from Michael's
+   *  model so one strong coordinator does not force every Lane onto that tier. */
+  recommendedWorkerModel?: string;
   /** Whether the router may DELIVER inbox mail to this provider (vs bouncing it
    *  to the god). Requires lifecycle status so the renderer can deliver only at a
    *  safe idle prompt: Claude natively, Antigravity/Codex/Grok via hook bridges.
@@ -229,6 +233,9 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // Current Codex orchestrator default. Keep this aligned with the provider
     // model catalog so a newly hired Michael does not request a retired slug.
     recommendedOrchestratorModel: 'gpt-5.6-sol',
+    // Team OS execution lanes prefer the fast worker tier unless the user has
+    // configured a provider-specific default model.
+    recommendedWorkerModel: 'gpt-5.6-luna',
     // Codex resumes via a SUBCOMMAND, not a flag: `codex resume [OPTIONS]
     // [SESSION_ID]`. A `--resume <id>` flag does not exist, which is why restarts
     // used to silently start a brand-new session instead of continuing.

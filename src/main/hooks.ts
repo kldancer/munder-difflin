@@ -59,6 +59,9 @@ export class HookServer {
    *  get_agent_detail / list_agents) can report "how full is each agent's context"
    *  without depending on a renderer round-trip. */
   private contextById = new Map<string, { tokens: number; limit: number; ts: number }>();
+  /** Last semantic roster injected into each god session. Volatile fleet
+   * telemetry never changes this signature, so ordinary prompts stay clean. */
+  private rosterSignatures = new Map<string, string>();
 
   constructor(
     private hive: HiveManager,
@@ -262,15 +265,26 @@ export class HookServer {
       steer = this.control.takeSteer(agentId) ?? null;
     }
 
-    // Keep god's roster CURRENT. fleet.json is always fresh on disk, but god's
-    // context is not: after a restart it resumes a transcript describing the old
-    // floor and messages agents that are long gone. Push the live roster in as
-    // additionalContext at the start of each session and on every prompt, so god
-    // knows the floor all the time instead of only when it remembers to Read.
-    // God-only and one line — every other agent is unaffected.
+    // Keep god's roster current without charging every prompt for volatile fleet
+    // telemetry. SessionStart always gets one compact snapshot; later prompts get
+    // another only when semantic membership/role/status/inbox/breaker facts differ.
     const wantsRoster = (event === 'SessionStart' || event === 'UserPromptSubmit')
       && !!agentId && this.hive.isGod(agentId);
-    const roster = wantsRoster ? this.hive.rosterContext() : null;
+    let roster: string | null = null;
+    if (wantsRoster && agentId) {
+      const snapshot = this.hive.rosterContextSnapshot();
+      if (event === 'SessionStart') {
+        if (snapshot) {
+          roster = snapshot.text;
+          this.rosterSignatures.set(agentId, snapshot.signature);
+        } else {
+          this.rosterSignatures.delete(agentId);
+        }
+      } else if (snapshot && this.rosterSignatures.get(agentId) !== snapshot.signature) {
+        roster = snapshot.text;
+        this.rosterSignatures.set(agentId, snapshot.signature);
+      }
+    }
 
     if (steer || roster) {
       this.emit(agentId, event, p);

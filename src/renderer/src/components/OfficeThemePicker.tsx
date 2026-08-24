@@ -1,17 +1,17 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '@/store/store';
-import type { ThemeId } from '@/scene/office/themeRegistry';
 import type { OfficeSkin } from '@/design/officeSkin';
 import { loadTheme } from '@/scene/office/themeLoader';
+import { THEMES } from '@/scene/office/themeRegistry';
 
 // Only complete bundles are clickable. A skin remounts the visual floor but
 // never kills, archives, or recreates an agent runtime.
-interface ThemeMeta { id: OfficeSkin; labelKey: string; blurbKey: string; swatch: string; }
+interface ThemeMeta { id: OfficeSkin; labelKey: string; blurbKey: string; }
 const THEME_META: ThemeMeta[] = [
-  { id: 'office', labelKey: 'office', blurbKey: 'officeBlurb', swatch: '#6b5a4a' },
-  { id: 'starship', labelKey: 'starship', blurbKey: 'starshipBlurb', swatch: '#102c62' },
-  { id: 'starfield-farm', labelKey: 'starfieldFarm', blurbKey: 'starfieldFarmBlurb', swatch: '#6e8d63' },
+  { id: 'office', labelKey: 'office', blurbKey: 'officeBlurb' },
+  { id: 'starship', labelKey: 'starship', blurbKey: 'starshipBlurb' },
+  { id: 'starfield-farm', labelKey: 'starfieldFarm', blurbKey: 'starfieldFarmBlurb' },
 ];
 
 export function OfficeThemePicker() {
@@ -59,10 +59,12 @@ export function OfficeThemePicker() {
       <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
           {THEME_META.map((theme) => {
             const isCurrent = theme.id === current;
+            const registeredTheme = THEMES[theme.id];
+            const previewUrl = registeredTheme?.backgroundUrl ?? registeredTheme?.tilesets[0]?.url;
             return (
               <button key={theme.id} onClick={() => void applyTheme(theme.id)} disabled={busy}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left', padding: 8, cursor: busy ? 'default' : 'pointer', background: isCurrent ? 'var(--cth-paper-100)' : 'transparent', boxShadow: isCurrent ? 'inset 0 0 0 1.5px var(--cth-ink-500)' : 'inset 0 0 0 1px var(--cth-ink-300)', opacity: busy && !isCurrent ? 0.6 : 1 }}>
-                <span style={{ width: 28, height: 28, flexShrink: 0, background: `linear-gradient(135deg, ${theme.swatch} 0 52%, color-mix(in srgb, ${theme.swatch} 58%, white) 52% 100%)`, boxShadow: 'inset 0 0 0 1.5px var(--cth-ink-500)' }} />
+                <span aria-hidden="true" style={{ width: 72, height: 48, flexShrink: 0, backgroundColor: 'var(--cth-paper-200)', backgroundImage: previewUrl ? `url(${previewUrl})` : undefined, backgroundPosition: 'center', backgroundSize: 'cover', imageRendering: 'pixelated', boxShadow: 'inset 0 0 0 1.5px var(--cth-ink-500)' }} />
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-900)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t(`w6.theme.${theme.labelKey}`)}</span>

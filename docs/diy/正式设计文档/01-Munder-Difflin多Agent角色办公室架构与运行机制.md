@@ -8,7 +8,7 @@
 | --- | --- |
 | 权威范围 | 多 Agent 运行模型、角色化、消息通信、Provider 适配、Session/记忆、控制与恢复机制 |
 | 不负责 | 实施阶段、一次性验证结果、临时运行目录、真实 Session ID、密钥和排查流水 |
-| 产品与架构结论 | 本文第 2～4 节；Wave 6 及后续能力取舍见 [正式实施规划](../实施规划/03-Munder-Difflin-Wave-6及后续设计结论与实施规划.md) |
+| 产品与架构结论 | 本文第 2～16 节；Codex 原生运行桥的后续升级见 [Codex App Server 原生运行桥升级实施规划](../实施规划/05-Munder-Difflin-Codex-App-Server原生运行桥升级实施规划.md) |
 | 长期运行合同 | [个人长期运行安全与备份恢复设计](02-Munder-Difflin个人长期运行安全与备份恢复设计.md) |
 | 主题视觉合同 | [内置主题视觉与低风险换肤设计](03-Munder-Difflin内置主题视觉与低风险换肤设计.md) |
 | 个人团队与多项目合同 | [个人团队操作系统与多项目工作流分层设计](04-Munder-Difflin个人团队操作系统与多项目工作流分层设计.md) |
@@ -127,6 +127,21 @@ flowchart TB
 | `harnessHome` | 角色、任务、消息、记忆、注册表和 Provider 隔离 Home | 临时 UI 组件状态、明文凭据文档 |
 | 项目/Worktree | Agent 实际修改与验证的工作成果 | Hive 身份、通信收据和 Provider 认证状态 |
 
+### 4.2 六类系统与事实所有者
+
+虚拟办公室不是只靠 `hive/` 运行，也不能把 Team OS、Hive、Provider Session 和项目仓库理解成同一种“提示词资料”。它们各自只拥有一类权威事实，并按单向依赖组合：
+
+| 系统 | 形象理解 | 权威事实 | 主要消费者 |
+| --- | --- | --- | --- |
+| Munder 源码与 Main Process | 楼宇和物业系统 | 进程、PTY、路由、Hook、IPC、门控和 Provider 适配规则 | Renderer、Hive、CLI |
+| Team OS | 公司章程、组织手册和项目通讯录 | 跨项目组织制度、角色能力、通用流程、项目登记和结果模板 | Michael、PlanCoordinator |
+| `harnessHome/hive` | 当天正在营业的办公室 | 当前员工、任务、消息、长期记忆、事件和恢复索引 | Main Process、各 Agent |
+| 每 Agent Provider Home / Session | 员工自己的大脑与会话本 | Provider 对话历史、Session 索引、CLI 配置 | 对应 Provider CLI |
+| 项目仓库 | 实际工厂和产品资料库 | 项目 AGENTS、正式设计、代码、机器计划、Gate 和生产合同 | 执行本项目的 Agent |
+| Renderer 与像素地图 | 玻璃墙和仪表盘 | 当前页面、投递队列、角色视觉和运行状态投影 | 用户 |
+
+依赖方向是：Team OS 和项目仓库提供稳定合同，Main Process 把合同编译为 Hive 任务与 CLI 启动参数，Provider Session 执行真实工作，Hook 再把运行事实投影到 Renderer。地图移动、工位动画和人物碰撞只解释运行状态，不参与模型推理、文件权限或任务调度。
+
 ## 5. Agent 的组成
 
 一个角色 Agent 不是一段提示词，而是五类状态的组合：
@@ -184,10 +199,15 @@ flowchart LR
 │   ├── tasks.json               # 结构化任务账本
 │   ├── board.md                 # Michael 维护的自由形式协作看板
 │   ├── log.jsonl                # 追加式事件日志
+│   ├── hooks.sock               # CLI Hook 到 Main Process 的本地 socket
+│   ├── spawn-requests/          # Michael 请求临时增员的文件队列
+│   ├── bin/                     # Hook、Proxy 与捆绑 Node 启动桥
+│   ├── .git/                    # 只服务 Hive 恢复的内部版本库
 │   └── agents/
 │       └── <agent-id>/
 │           ├── identity.md      # 角色身份与职责
 │           ├── memory.md        # 跨 Session 长期记忆
+│           ├── cursor.json      # 已处理消息游标，防止重复唤醒
 │           ├── inbox/
 │           │   └── .done/       # 已处理消息
 │           ├── outbox/
@@ -196,7 +216,8 @@ flowchart LR
 │           ├── .gemini-cli/     # Gemini 隔离 Home，按 Provider 存在
 │           └── .opencode/       # OpenCode/DeepSeek 隔离 Home，按 Provider 存在
 ├── worktrees/                   # 按任务创建的隔离 Git 工作区
-└── roster.json                  # UI 团队恢复镜像
+├── roster.json                  # UI 团队、人物和队列恢复镜像
+└── roster-backups/              # roster 的恢复备份，不是运行权威
 ```
 
 ### 6.2 持久与易失状态
@@ -209,6 +230,29 @@ flowchart LR
 | 运行状态与用量摘要 | `fleet.json`、事件日志 | 持久快照，可由新运行更新 |
 | PTY 进程、Hook socket | 内存与操作系统 | 应用退出后消失，重启时重建 |
 | Renderer 输入草稿与投递队列 | Renderer Store；队列有本地持久镜像 | 页面运行态；适用状态可恢复 |
+
+### 6.3 Hive 文件关系与读取顺序
+
+Hive 顶层文件可以按“工牌、花名册、值班表、任务簿、公告板、邮箱、笔记和流水”理解：
+
+| 文件/目录 | 回答的问题 | 写入者与更新方式 | 读取注意事项 |
+| --- | --- | --- | --- |
+| `agents/<id>/identity.md` | 我是谁、职责是什么、工作目录在哪里 | Main 在 spawn/恢复时由 Registry 幂等刷新 | 是稳定工牌，不包含本次任务全文 |
+| `registry.json` | 办公室有哪些人、如何恢复其 Provider/Session | Main 通过统一注册入口原子更新 | 是身份与恢复索引，不是完整实时状态总线 |
+| `fleet.json` | 最近一次快照中谁在岗、用量、断路器和 Inbox 是否积压 | Main 周期性从注册、遥测、断路器和信箱汇总 | `ts`、token、费用和最近工具是易变快照，不应注入常驻 Prompt |
+| `tasks.json` | 任务是谁负责、依赖什么、做到哪一步 | Main/Hive 任务 API 结构化更新 | 是自动协调的任务事实，不以 `board.md` 文本猜测状态 |
+| `board.md` | 当前工作用自然语言怎样概括 | Michael 维护 | 面向人和总控的叙事摘要，不是第二套任务数据库 |
+| `inbox/`、`outbox/` | 谁向谁发送了哪项工作或结论 | Agent 只写自己 Outbox；Main Router 投递到目标 Inbox | `.done`、`.sent` 是处理档案；大制品只传路径 |
+| `memory.md` | 哪些事实跨 Session 仍值得记住 | 对应 Agent 只追加新耐久事实或决策 | 不保存 transcript、心跳、无变化检查和重复状态 |
+| `cursor.json` | 哪封信已进入 Agent 处理边界 | Agent/Renderer 随处理推进 | 防止同一消息在恢复或轮询中反复唤醒 |
+| `PROTOCOL.md` | 邮件格式和协作制度是什么 | Main 生成并只迁移已知系统模板 | 按需读取；机器字段和目录名不能翻译 |
+| `COMMANDS.md` | 当前 CLI/Hive 操作如何执行 | Main 生成参考手册 | 必须与 Agent 的实际 Provider 一致，不能把 Claude 命令当成 Codex 合同 |
+| `hooks.sock`、`bin/` | CLI 的 Session/工具/停止事件怎样回到办公室 | Main 创建 socket，桥接脚本转发 Hook/Proxy 事件 | 是低延迟神经通道，不是长期记忆 |
+| `log.jsonl` | 办公室发生过哪些运行事件 | Main 追加 spawn、session、message、task 等事件 | 不等于完整 CLI transcript，长期运行需要保留策略 |
+| Hive `.git/` | Hive 关键文件如何恢复与审计 | Main 对登记、消息、任务和记忆建立内部提交 | 与项目 Git 完全隔离，不能据此推断项目已提交 |
+| `roster.json` | UI 应恢复哪些人物、视觉属性、选择和待投递队列 | Renderer 经 Main 持久化 | 与 Registry 对账但不替代真实 PTY/Session Registry |
+
+Michael 的推荐读取顺序不是扫描整个 Hive，而是先看 `tasks.json`、`fleet.json` 和自己的 Inbox；只有需要了解某位员工的稳定职责或历史结论时，才读取其 Registry/Identity 或向其发问。普通 Agent 默认只读自己的 Identity、Memory、Inbox 和本任务明确引用的共享事实。
 
 ## 7. Agent 启动、工作与恢复
 
@@ -391,6 +435,34 @@ sequenceDiagram
 
 Munder Difflin 当前没有自动加载到所有 Agent 的统一 `AGENTS.md`“蜂巢意识”。其共同意识由精简 Prompt、`PROTOCOL.md`、`registry.json`、`fleet.json`、`tasks.json` 和 `board.md` 按需组合，避免每轮都把整个办公室状态塞入上下文。
 
+### 10.1 Bootstrap 是上下文编译结果，不是完整员工手册
+
+Agent 启动时收到的 bootstrap 只负责让一个真实 CLI 能立即、安全地进入办公室。详细制度、项目正文和动态状态留在权威文件或消息中按需读取。当前上下文分为五层：
+
+| 层 | 内容 | 进入上下文的时机 | 变化频率 |
+| --- | --- | --- | --- |
+| 基础 bootstrap | 身份路径、Hive 路径、回复语言、四条收发信/记忆规则、安全边界 | 每次创建或恢复 CLI 进程 | Agent 生命周期内稳定 |
+| `identity.md` | 姓名、角色、能力、cwd、Michael 总控身份 | Agent 按需读取；Main 在 spawn 时刷新 | 角色配置变化时 |
+| 首次定向说明 | 提醒全新 Michael 查看 Memory、Inbox、Board、Tasks 和命令参考 | 只在没有可恢复 Session 的 Michael 首次启动 | 每个新 Session 一次 |
+| Hive 工作单 | 本次 `OBJECTIVE`、`OUTPUT`、`TOOLS`、`BOUNDARIES` 及路径/消息 ID | 用户派工或 PlanCoordinator 分配时 | 每项任务不同 |
+| LIVE ROSTER 差量 | 成员、角色、关键状态、断路器和 Inbox 变化 | SessionStart 后首次提供，此后只在语义签名变化时 | 有意义的团队变化时 |
+
+基础 bootstrap 不包含日期、计数器、费用、最近工具、完整 Board、项目背景或其他易变值，以保持 Provider Prompt Cache 稳定。LIVE ROSTER 的语义签名排除时间戳、token、费用和活动秒数；没有语义变化时不重复唤醒 Michael，也不追加 `memory.md`。
+
+Codex 黄金主链把这段内容作为 CLI 的初始位置参数交付；其他 Provider 可通过追加系统 Prompt、交互 Prompt 或 Bridge 使用同一语义，但必须遵守自身真实参数和恢复合同。任务内容永远在 bootstrap 之后独立到达，因此“重启员工”不会把某个旧项目需求永久焊进角色身份。
+
+### 10.2 Michael、普通角色和准备助手的差量
+
+所有角色共享相同的短协议，只有职业差量不同：
+
+- Michael 额外拥有拆解、派工、签收、冲突处理、集成、最终质量和 `board.md`；派工前先看 Fleet/Registry 并优先复用现有人，只有真正独立 Lane 才增员。
+- 普通角色只保留“边界不清、跨域或需要签收时联系 Michael”，具体专业职责来自 Identity、Team OS 能力和本次工作单。
+- 准备助手只做只读上下文补全并把自包含工作单发回 Michael，不直接实施原任务。
+
+Michael 不应在 bootstrap 中携带整套项目规范或团队名单。普通角色也不应复制 Michael 的调度制度。基础 Codex 主链以不启用可选语义记忆/知识图谱时不超过 3,600 字符为保护门槛；可选能力只有被真实配置并可用时才增加对应说明。
+
+`identity.md` 与 bootstrap 的关系是“可编辑工牌”与“开机接线说明”：Main 根据当前注册信息刷新工牌，bootstrap 只给出工牌路径和最短行动规则。`memory.md` 只在首次建员时创建并在后续恢复中保留，不能因为角色重启而覆盖已有长期记忆。
+
 ## 11. Session、长期记忆与上下文预算
 
 ### 11.1 三种记忆层次
@@ -442,7 +514,68 @@ flowchart LR
 
 因此 `memory.md` 与 CLI Session 不冲突：前者是显式、可编辑、跨 Session 的耐久摘要；后者是 Provider 拥有的对话上下文。冲突只会在两者重复保存未经提炼的历史时出现。
 
-## 12. 空闲门控、控制与状态
+## 12. Team OS 与 Hive 的运行结合
+
+Team OS 的完整产品与权威分层见 [个人团队操作系统与多项目工作流分层设计](04-Munder-Difflin个人团队操作系统与多项目工作流分层设计.md)。本文只维护它怎样进入 Munder 运行链：Team OS 是独立、版本化、默认只读的组织合同；Hive 是某个 `harnessHome` 内正在运行的办公室账本。Team OS 不保存 Session、实时消息或某次任务状态，Hive 也不能反向改写 Team OS 和项目权威。
+
+### 12.1 运行时读取边界
+
+| Team OS 内容 | 当前机械使用方式 | 不会发生的行为 |
+| --- | --- | --- |
+| `projects/registry.json` 与 `projects/adapters/*.yaml` | 找到已登记项目、项目根目录及权威/机器/证据入口 | 不复制项目正文到 Team OS |
+| `roles/capabilities.yaml` | 校验 Plan 中角色和能力是否存在 | 不把七个角色手册全量注入所有 Agent |
+| `templates/outcome-card.yaml` | 提供结果卡字段合同 | 不创建第二套任务数据库 |
+| 项目 `workspaces.json` | 从平台总控项目按需解析服务仓库 | 不要求把每个服务仓库逐一注册到 Team OS |
+| `organization/`、`workflows/` | 由 Michael 或维护任务按需阅读的稳定方法 | 当前不自动拼接进每次 bootstrap |
+| `models/`、`evals/`、`tools/` | 模型准入、长期评测和工具边界的治理资料 | 当前不自动选择模型或替代项目 Gate |
+
+Team OS Loader 对注册表、Adapter 和引用做有界只读解析，只返回路径、存在性、类型、约束和错误状态，不返回文档正文、Prompt、Transcript、任务内容或秘密。真正需要项目知识时，由 Michael/执行角色直接读取项目自己的 `AGENTS.md`、实施规范、正式设计和机器配置。
+
+Team OS 当前不统一分发项目 Skills。项目专属 Skill 继续由项目仓库拥有，并由 Codex/AGENTS 的匹配规则按任务加载；跨项目反复证明有价值的能力，才适合另行晋升为用户级或 Team OS 管理的可版本化能力，不能先复制一份造成双权威。
+
+### 12.2 “按结论开始推进”的真实链路
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 👤 用户
+    participant Michael as 🧭 Michael 的现有 Codex Session
+    participant TeamOS as 📚 Team OS / 项目 Adapter
+    participant Planner as 🧮 PlanCoordinator
+    participant Hive as 📂 Hive Tasks / Inbox
+    participant Worker as 🧑‍💻 独立 Agent + PTY + Session
+    participant Repo as 🏭 项目仓库
+
+    User->>Michael: 讨论想法直到结论满意
+    User->>Michael: 按结论开始推进
+    Michael->>TeamOS: 请求项目权威与 Workspace 索引
+    TeamOS-->>Michael: 项目权威路径、Workspace 索引和提交协议
+    Michael->>Repo: 按需读取 AGENTS、规范和正式设计
+    Michael->>Planner: 原子提交 Plan Manifest
+    Planner->>Planner: 校验项目、角色、能力、DAG、并发、写集合和授权
+    Planner->>Hive: 创建/更新结构化任务与计划状态
+    Planner->>Worker: 复用或启动真实实例并发送四段式工作单
+    Worker->>Repo: 在 cwd 锚点下实施和验证
+    Worker->>Hive: 更新任务结果并向 Michael 回信
+    Hive-->>Michael: Lane、依赖和 Gate 事实
+    Michael-->>User: 集成、验收和按 Gate 汇报
+```
+
+规划请求、Michael 提交、规范化计划和运行状态持久化在办公室 `.work/team-os/plans/`；Hive `tasks.json` 继续是执行任务账本。PlanCoordinator 是确定性校验和编排器，不调用第二个模型，也不取代 Michael 的分析判断或 Provider Agent Loop。
+
+串行且属于同一计划的任务可以复用同一角色实例和 Session；无关计划复用同一职业工位时使用新 CLI Session；真正并行的同角色 Lane 必须拥有不同 Agent 实例、PTY 和 Session。`cwd` 只是本次任务的默认上下文锚点，不是文件权限沙箱；可访问和可修改范围仍由工作单 scope、项目合同、本机权限与用户授权共同决定。
+
+### 12.3 当前实现一致性边界
+
+以下边界必须如实理解，不能把目标设计误读成已经闭合的运行事实：
+
+1. 历史 Harness 中的 `COMMANDS.md` 可能仍偏向 Claude，而当前 Michael 使用 Codex；Identity 指向命令手册不代表其中所有命令都适用，手册需要 Provider 感知收敛。
+2. 为保护用户编辑，`PROTOCOL.md` 只自动迁移已知系统模板；历史副本可能落后于当前 bootstrap。当前最短 bootstrap 是运行时硬约束，协议文档是按需参考，二者版本需要显式校准。
+3. Registry 是身份/恢复权威，Fleet 是周期快照，Renderer Hook Store 是当前视觉状态来源；现有实现尚未让 Registry/Fleet 单独拥有全部实时 `working/idle` 状态，Michael 不能只凭一个旧 Fleet 值判断员工一定空闲。
+4. `roster.json` 与 Registry 的重复是 UI 恢复和真实进程恢复的分工，不应合并成一个任意写文件；启动时必须对账，真实 PTY/Session 以 Main/Registry 为准。
+5. `roster-backups/`、`log.jsonl`、Hive 消息归档和内部 Git 都是追加或保留优先机制；日常 5～6 人规模不是 IO 瓶颈，但长期运行仍需去重、轮转和可验证保留策略。
+
+## 13. 空闲门控、控制与状态
 
 系统没有用单一枚举表达所有状态，而是把“运行状态”“投递状态”和“操作员控制”作为可叠加事实：
 
@@ -495,7 +628,7 @@ flowchart LR
 
 Provider Hook 是权威运行信号；如果某个 Bridge 缺少可靠的 turn-end 事件，Renderer 使用 PTY 静默时间作为保守回退，把长时间无输出的 `working/compacting` 投影恢复为 `idle`。新 Hook 事件会再次校正状态。
 
-## 13. 故障、交付与不可丢失语义
+## 14. 故障、交付与不可丢失语义
 
 | 故障 | 系统行为 |
 | --- | --- |
@@ -510,13 +643,13 @@ Provider Hook 是权威运行信号；如果某个 Bridge 缺少可靠的 turn-e
 | Agent 关闭 | Registry 标记 archived，保留记忆和恢复信息；广播不再向其投递 |
 | 自动权限未开启 | 沿用 Provider 默认审批/沙箱；不会偷偷附加 bypass 参数 |
 
-### 13.1 任务等待的可解释读层
+### 14.1 任务等待的可解释读层
 
 任务账本仍以 `dependsOn` 表达任务依赖，可选 `conversations` 只引用已有 Hive Conversation ID。任务详情通过这两个精确字段读取依赖状态、负责人、缺失任务、消息时间线和 `in_reply_to` 回复关系，再计算“等待依赖、等待某位收件人回复、等待人工问答或当前无明确等待项”。这是一层只读解释，不改变 Router、消息落盘格式或任务状态机。
 
 旧任务没有 `conversations` 时只展示已有任务事实，不扫描全部消息，也不以标题或正文猜测关联。消息正文继续在 Main 侧脱敏后才交给 Renderer，单次查询保持有界。
 
-### 13.2 Worktree 交付门禁
+### 14.2 Worktree 交付门禁
 
 隔离 Worktree 的交付复用现有 Git 页面，并保持“检查 → 显式合并 → 再检查 → 显式回收”的短链路：
 
@@ -525,9 +658,9 @@ Provider Hook 是权威运行信号；如果某个 Bridge 缺少可靠的 turn-e
 3. 只有 `worktreeIsGcSafe` 再次证明成果已集成且工作区干净，才使用非强制 `git worktree remove` 回收目录；分支继续保留。
 4. 活跃 PTY 使用相关目录时拒绝合并或回收；不提供 reset、force remove、自动删除或后台交付。
 
-## 14. IO、通信延迟与容量边界
+## 15. IO、通信延迟与容量边界
 
-### 14.1 五到六个 Agent 的常态
+### 15.1 五到六个 Agent 的常态
 
 日常 5～6 个 Agent 时，Hive IO 主要是小型 JSON/Markdown、目录扫描、原子重命名和追加日志；模型推理、网络请求与工具执行通常远比本地文件操作耗时。该规模下本地 SSD 的 IO 压力通常不是瓶颈。
 
@@ -539,7 +672,7 @@ Provider Hook 是权威运行信号；如果某个 Bridge 缺少可靠的 turn-e
 | PTY 输入 | 100ms 级就绪轮询与串行提交 | 防止 CLI 尚未准备好或输入交错 |
 | 模型回答 | Provider 网络、排队、模型与上下文 | 通常是端到端耗时的主要部分 |
 
-### 14.2 需要关注的 IO 风险
+### 15.2 需要关注的 IO 风险
 
 - Agent 高频发送大量细碎消息，会增加目录扫描、归档文件数和模型唤醒次数。
 - 把完整日志或大制品放入 Inbox/Memory，会同时放大 IO 和 Token 消耗。
@@ -550,7 +683,7 @@ Provider Hook 是权威运行信号；如果某个 Bridge 缺少可靠的 turn-e
 
 Command Center 的生命周期容量报告只遍历目录项并读取文件元数据，跳过符号链接，按目录数、文件数、深度和累计字节设置硬上限；触及上限时标为局部统计。它只在进入页面或用户刷新时运行，不读取 Session、消息、Prompt、日志或记忆正文，也不包含删除或定时清理能力。默认策略始终是保留，任何治理先完成可验证备份。
 
-## 15. 核心不变量
+## 16. 核心不变量
 
 1. Agent 只能写自己的 `outbox/`、`memory.md` 和工作目录，不能直接写其他 Agent 的信箱。
 2. Provider/model ID、Hive JSON 字段、消息枚举、Hook 名和 CLI 参数是机器合同，不能因中文化改变。
@@ -562,13 +695,20 @@ Command Center 的生命周期容量报告只遍历目录项并读取文件元�
 8. 关闭 Agent 是归档而不是抹除；重启与恢复必须尽量保持 Agent ID、记忆和 Session 连续性。
 9. 暂停工具、暂停投递和停止是三种独立控制，不能互相冒充。
 10. 运行失败必须保留任务或消息，并产生可行动状态；不能把“写入尝试”当作“已送达”。
+11. Team OS 运行时默认只读；项目仓库拥有项目事实，Hive 运行投影不能反向覆盖两者。
+12. PlanCoordinator 只做确定性校验和编排，不能变成第二个模型循环或第二套任务账本。
+13. `cwd` 是上下文锚点而不是权限沙箱；真实写范围由工作单、项目合同、本机权限和用户授权共同决定。
 
-## 16. 实现地图
+## 17. 实现地图
 
 | 设计责任 | 主要实现位置 |
 | --- | --- |
 | Provider 类型、能力、启动与恢复合同 | [`src/shared/agentProvider.ts`](../../../src/shared/agentProvider.ts) |
-| Hive 目录、角色 Prompt、消息路由、Provider Bridge | [`src/main/hive.ts`](../../../src/main/hive.ts) |
+| Hive 目录、Identity/bootstrap 编译、消息路由、Provider Bridge | [`src/main/hive.ts`](../../../src/main/hive.ts) |
+| Team OS 有界 Loader、项目 Adapter 与 Workspace Resolver | [`src/main/teamOs.ts`](../../../src/main/teamOs.ts) |
+| Plan Manifest schema、Michael 规划提示与校验合同 | [`src/main/teamOsPlan.ts`](../../../src/main/teamOsPlan.ts) |
+| “按结论开始推进”、计划持久化和确定性协调 | [`src/main/teamOsPlanning.ts`](../../../src/main/teamOsPlanning.ts) |
+| CLI Hook 到 Main Process 的生命周期接入 | [`src/main/hooks.ts`](../../../src/main/hooks.ts) |
 | 任务依赖与 Conversation 解释 | [`src/renderer/src/components/taskCoordination.ts`](../../../src/renderer/src/components/taskCoordination.ts) |
 | Worktree 检查、合并与安全回收 | [`src/main/worktreeDelivery.ts`](../../../src/main/worktreeDelivery.ts) |
 | 生命周期有界容量报告 | [`src/main/lifecycleCapacity.ts`](../../../src/main/lifecycleCapacity.ts) |
@@ -582,7 +722,7 @@ Command Center 的生命周期容量报告只遍历目录项并读取文件元�
 | 内置主题、地图视觉与无损换肤 | [`src/renderer/src/scene/office/themeRegistry.ts`](../../../src/renderer/src/scene/office/themeRegistry.ts)、[`src/renderer/src/scene/office/OfficeFloor.tsx`](../../../src/renderer/src/scene/office/OfficeFloor.tsx)；视觉合同见 [内置主题视觉与低风险换肤设计](03-Munder-Difflin内置主题视觉与低风险换肤设计.md) |
 | Hive IPC 类型与 Renderer 安全边界 | [`src/preload/index.ts`](../../../src/preload/index.ts) |
 
-## 17. 本文维护规则
+## 18. 本文维护规则
 
 - 只有当上述稳定合同发生变化时才修改本文；测试命令、截图和一次性运行证据继续写入 `.work/`。
 - 修改 Provider 参数、消息 schema、目录布局、Session 恢复、空闲门控或凭据边界时，必须同步校准本文对应章节。

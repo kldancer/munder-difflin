@@ -53,6 +53,28 @@ test('no POSIX shell variables survive into agent-facing text', async (t) => {
   }
 });
 
+test('stable bootstrap is bounded and rejects no-change memory noise', async (t) => {
+  const { inj } = await floor(t, { injectOpts: { semanticMemory: false, knowledgeGraph: false } });
+  const prompt = promptOf(inj);
+  assert.ok(prompt.length < 3600, `stable bootstrap grew to ${prompt.length} chars`);
+  assert.match(prompt, /role "orchestrator"/);
+  assert.match(prompt, /Stable identity:/);
+  assert.match(prompt, /never append heartbeat, no-change, or repeated status/i);
+});
+
+test('Codex receives the same bounded bootstrap as its positional initial prompt', async (t) => {
+  const { inj } = await floor(t, {
+    provider: 'codex',
+    injectOpts: { semanticMemory: false, knowledgeGraph: false }
+  });
+  const prompt = inj.args.at(-1);
+  assert.equal(typeof prompt, 'string');
+  assert.ok(prompt.length < 3600, `Codex bootstrap grew to ${prompt.length} chars`);
+  assert.match(prompt, /HIVE PROTOCOL/);
+  assert.match(prompt, /role "orchestrator"/);
+  assert.match(prompt, /never append heartbeat, no-change, or repeated status/i);
+});
+
 test('the knowledge-graph command carries absolute paths, not variables', async (t) => {
   const { inj, hive } = await floor(t);
   const prompt = promptOf(inj);

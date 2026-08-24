@@ -4,6 +4,7 @@ import { PixelPanel } from './PixelPanel';
 import { PixelBadge, StatusKind } from './PixelBadge';
 import { useHasTerminalDraft } from './terminalPool';
 import { SpritePortrait } from './SpritePortrait';
+import { localizeActivityText } from '@/utils/activityText';
 import { RealtimeMichaelToggle } from './RealtimeMichaelToggle';
 import { CostHud } from '@/realtime/CostHud';
 import { AccentColorName } from '@/design/tokens';
@@ -125,7 +126,8 @@ export function AgentCard({
     .filter(Boolean).join(', ') || 'none';
 
   // One context line: what it's DOING while working, WHERE it lives while idle.
-  const infoLine = (status !== 'idle' && action) ? action : project;
+  const localizedAction = action ? localizeActivityText(action) : action;
+  const infoLine = (status !== 'idle' && localizedAction) ? localizedAction : project;
   const noteFirstLine = (note ?? '').split('\n').find((l) => l.trim()) ?? '';
 
   return (
@@ -182,12 +184,12 @@ export function AgentCard({
             // against the tint, which is what the tile is meant to look like.
             background: isGod ? 'var(--cth-paper-100)' : `var(--cth-${accent}-light)`,
             boxShadow: `inset 0 0 0 1px var(--cth-ink-${isGod ? '300' : '100'})`,
-            // Anchor the sprite's TOP: the 56px-tall portrait overflows this
-            // tile, and bottom-anchoring cropped the head — crop feet, not face.
-            display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflow: 'hidden',
+            // The compact roster deliberately uses a complete idle sprite;
+            // contain the whole 18×32 frame instead of clipping a bust/head.
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden',
             flexShrink: 0
           }}>
-            <SpritePortrait character={character} scale={2} />
+            <SpritePortrait character={character} scale={1.4} variant="full-body" />
           </div>
 
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
@@ -219,7 +221,7 @@ export function AgentCard({
 
             {/* Context line: action while working, repo while idle. */}
             <div
-              title={`${project}${action && status !== 'idle' ? ` — ${action}` : ''}`}
+              title={`${project}${localizedAction && status !== 'idle' ? ` — ${localizedAction}` : ''}`}
               style={{
                 fontSize: 11, lineHeight: '14px',
                 color: 'var(--cth-ink-500)',

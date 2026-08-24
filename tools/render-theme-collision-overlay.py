@@ -49,10 +49,22 @@ def render(map_path: Path, background_path: Path, output_path: Path) -> None:
             width=max(2, round(scale)),
         )
 
-    collision = next(layer for layer in map_data["layers"] if layer["name"] == "collision")["data"]
+    collision_layer = next((layer for layer in map_data["layers"] if layer["name"] == "collision"), None)
+    collision = collision_layer.get("data") if collision_layer else None
+    def footprint_blocked(px: float, py: float) -> bool:
+        for obstacle in geometry:
+            closest_x = max(obstacle["x"], min(px, obstacle["x"] + obstacle["width"]))
+            closest_y = max(obstacle["y"], min(py, obstacle["y"] + obstacle["height"]))
+            if (px - closest_x) ** 2 + (py - closest_y) ** 2 < FOOT_RADIUS ** 2:
+                return True
+        return False
     for y in range(map_data["height"]):
         for x in range(map_data["width"]):
-            if collision[y * map_data["width"] + x] == 0:
+            blocked = collision[y * map_data["width"] + x] != 0 if collision is not None else footprint_blocked(
+                x * map_data["tilewidth"] + map_data["tilewidth"] / 2,
+                y * map_data["tileheight"] + map_data["tileheight"],
+            )
+            if not blocked:
                 continue
             box = (x * tile, y * tile, (x + 1) * tile - 1, (y + 1) * tile - 1)
             draw.rectangle(box, outline=(236, 72, 153, 105), width=max(1, round(scale)))
@@ -66,6 +78,22 @@ def render(map_path: Path, background_path: Path, output_path: Path) -> None:
         cx = (x + 0.5) * tile
         cy = (y + 1) * tile
         draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=(42, 255, 174, 190))
+
+    activity_layer = next((layer for layer in map_data["layers"] if layer["name"] == "activity-points"), None)
+    for point in activity_layer.get("objects", []) if activity_layer else []:
+        cx = (point["x"] + map_data["tilewidth"] / 2) * scale
+        cy = (point["y"] + map_data["tileheight"]) * scale
+        draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=(255, 194, 74, 220))
+
+    occlusion_layer = next((layer for layer in map_data["layers"] if layer["name"] == "occlusion-geometry"), None)
+    for front in occlusion_layer.get("objects", []) if occlusion_layer else []:
+        box = (
+            front["x"] * scale,
+            front["y"] * scale,
+            (front["x"] + front["width"]) * scale,
+            (front["y"] + front["height"]) * scale,
+        )
+        draw.rectangle(box, outline=(47, 217, 255, 230), width=max(2, round(scale)))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     Image.alpha_composite(background, overlay).save(output_path)

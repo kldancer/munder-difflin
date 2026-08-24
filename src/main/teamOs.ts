@@ -8,8 +8,10 @@ import { parse as parseYaml } from 'yaml';
 export const TEAM_OS_LIMITS = {
   registryBytes: 256 * 1024,
   adapterBytes: 256 * 1024,
+  workspaceRegistryBytes: 512 * 1024,
   projects: 100,
   referencesPerProject: 32,
+  workspaces: 256,
   roles: 32,
   capabilityProfiles: 64,
   selectedCapabilities: 8,
@@ -58,6 +60,30 @@ export interface TeamOsSnapshot {
     autoRouting: false;
     terminalFallback: true;
   };
+  error?: { code: string; message: string };
+}
+
+export type TeamOsWorkspaceMode = 'managed' | 'reference-only' | 'excluded' | 'unclassified';
+
+export interface TeamOsWorkspace {
+  key: string;
+  kind: string;
+  path: string;
+  exists: boolean;
+  directory: boolean;
+  mode: TeamOsWorkspaceMode;
+  group?: string;
+  lifecycle?: string;
+  authorityRole?: string;
+  runtimeOwner?: string;
+  supersededBy?: string;
+}
+
+export interface TeamOsWorkspaceSnapshot {
+  ok: boolean;
+  projectId: string;
+  registryPath: string | null;
+  workspaces: TeamOsWorkspace[];
   error?: { code: string; message: string };
 }
 
@@ -163,6 +189,11 @@ function shortString(value: unknown, field: string, max = 512): string {
 function shortStringList(value: unknown, field: string, limit = 32): string[] {
   if (!Array.isArray(value) || value.length > limit) throw new Error(`${field} must be an array with at most ${limit} items`);
   return value.map((entry, index) => shortString(entry, `${field}[${index}]`, 256));
+}
+
+function optionalShortString(value: unknown, field: string, max = 256): string | undefined {
+  if (value == null || value === '') return undefined;
+  return shortString(value, field, max);
 }
 
 function projectId(value: unknown, field: string): string {
@@ -388,6 +419,91 @@ export function loadTeamOsSnapshot(options: LoadTeamOsOptions = {}): TeamOsSnaps
       ...base, status: 'invalid', projects: [],
       error: { code: 'REGISTRY_INVALID', message: error instanceof Error ? error.message : String(error) }
     };
+  }
+}
+
+/** Resolve the workspace registry referenced by one project adapter. The project
+ * remains the only registered Team OS object; child repositories are projected
+ * on demand and never copied into HarnessConfig.registeredRepos. */
+export function resolveProjectWorkspace(
+  options: LoadTeamOsOptions,
+  requestedProjectId: string,
+  requestedKey?: string | null
+): TeamOsWorkspaceSnapshot {
+  let normalizedProjectId = '';
+  try { normalizedProjectId = projectId(requestedProjectId, 'projectId'); }
+  catch (error) {
+    return { ok: false, projectId: String(requestedProjectId ?? ''), registryPath: null, workspaces: [], error: {
+      code: 'WORKSPACE_REQUEST_INVALID', message: error instanceof Error ? error.message : String(error)
+    } };
+  }
+  const snapshot = loadTeamOsSnapshot(options);
+  const project = snapshot.projects.find((candidate) => candidate.id === normalizedProjectId);
+  if (snapshot.status !== 'ready' || !project || project.status !== 'ready') {
+    return { ok: false, projectId: normalizedProjectId, registryPath: null, workspaces: [], error: {
+      code: 'PROJECT_UNAVAILABLE', message: project?.error?.message ?? snapshot.error?.message ?? 'selected project is not ready'
+    } };
+  }
+  const reference = project.references.find((candidate) => candidate.group === 'machine' && candidate.key === 'workspaces');
+  if (!reference?.exists || reference.kind !== 'file') {
+    return { ok: false, projectId: normalizedProjectId, registryPath: reference?.absolutePath ?? null, workspaces: [], error: {
+      code: 'WORKSPACE_REGISTRY_MISSING', message: 'project adapter has no readable machine.workspaces file'
+    } };
+  }
+  try {
+    const parsed = object(JSON.parse(readBounded(reference.absolutePath, TEAM_OS_LIMITS.workspaceRegistryBytes)));
+    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.workspaces)) {
+      throw new Error('workspace registry must have version 1 and a workspaces array');
+    }
+    if (parsed.workspaces.length > TEAM_OS_LIMITS.workspaces) {
+      throw new Error(`workspace registry exceeds the ${TEAM_OS_LIMITS.workspaces} workspace limit`);
+    }
+    const documentation = object(parsed.designDocumentation) ?? {};
+    const managed = new Set(shortStringList(documentation.managedWorkspaces ?? [], 'designDocumentation.managedWorkspaces', TEAM_OS_LIMITS.workspaces));
+    const referenceOnly = new Set(shortStringList(documentation.referenceOnlyWorkspaces ?? [], 'designDocumentation.referenceOnlyWorkspaces', TEAM_OS_LIMITS.workspaces));
+    const excluded = new Map<string, string>();
+    for (const [group, entries] of Object.entries(object(documentation.excludedWorkspaceGroups) ?? {})) {
+      for (const key of shortStringList(entries, `designDocumentation.excludedWorkspaceGroups.${group}`, TEAM_OS_LIMITS.workspaces)) {
+        if (excluded.has(key)) throw new Error(`workspace appears in multiple excluded groups: ${key}`);
+        excluded.set(key, group);
+      }
+    }
+    const seen = new Set<string>();
+    const workspaces = parsed.workspaces.map((entry, index): TeamOsWorkspace => {
+      const row = object(entry);
+      if (!row) throw new Error(`workspaces[${index}] must be an object`);
+      const key = projectId(row.name, `workspaces[${index}].name`);
+      if (seen.has(key)) throw new Error(`duplicate workspace key: ${key}`);
+      seen.add(key);
+      const path = shortString(row.path, `workspaces[${index}].path`, 4_096);
+      if (!isAbsolute(path)) throw new Error(`workspaces[${index}].path must be absolute`);
+      const exists = existsSync(path);
+      const directory = exists && statSync(path).isDirectory();
+      const mode: TeamOsWorkspaceMode = managed.has(key) ? 'managed'
+        : referenceOnly.has(key) ? 'reference-only'
+          : excluded.has(key) ? 'excluded' : 'unclassified';
+      return {
+        key,
+        kind: shortString(row.kind, `workspaces[${index}].kind`, 160),
+        path,
+        exists,
+        directory,
+        mode,
+        ...(excluded.get(key) ? { group: excluded.get(key) } : {}),
+        ...(optionalShortString(row.lifecycle, `workspaces[${index}].lifecycle`) ? { lifecycle: optionalShortString(row.lifecycle, `workspaces[${index}].lifecycle`) } : {}),
+        ...(optionalShortString(row.authorityRole, `workspaces[${index}].authorityRole`) ? { authorityRole: optionalShortString(row.authorityRole, `workspaces[${index}].authorityRole`) } : {}),
+        ...(optionalShortString(row.runtimeOwner, `workspaces[${index}].runtimeOwner`) ? { runtimeOwner: optionalShortString(row.runtimeOwner, `workspaces[${index}].runtimeOwner`) } : {}),
+        ...(optionalShortString(row.supersededBy, `workspaces[${index}].supersededBy`) ? { supersededBy: optionalShortString(row.supersededBy, `workspaces[${index}].supersededBy`) } : {})
+      };
+    });
+    const key = requestedKey == null || requestedKey === '' ? null : projectId(requestedKey, 'workspaceKey');
+    const selected = key ? workspaces.filter((workspace) => workspace.key === key) : workspaces;
+    if (key && selected.length === 0) throw new Error(`workspace key does not exist: ${key}`);
+    return { ok: true, projectId: normalizedProjectId, registryPath: reference.absolutePath, workspaces: selected };
+  } catch (error) {
+    return { ok: false, projectId: normalizedProjectId, registryPath: reference.absolutePath, workspaces: [], error: {
+      code: 'WORKSPACE_REGISTRY_INVALID', message: error instanceof Error ? error.message : String(error)
+    } };
   }
 }
 

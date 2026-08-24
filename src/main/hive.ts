@@ -169,6 +169,12 @@ export interface Registry {
   agents: Record<string, RegistryAgent>;
 }
 
+export interface RosterContextSnapshot {
+  /** Hash of semantic roster fields only; volatile telemetry is excluded. */
+  signature: string;
+  text: string;
+}
+
 /** Build env + extra spawn args that make an agent process hive-aware. */
 export interface SpawnInjection {
   args: string[];
@@ -1194,28 +1200,27 @@ export class HiveManager {
       ? `Enterprise knowledge: this organisation has a private Knowledge Graph of its own documents, policies, and business context. When a task needs that context — company-specific facts, house style, internal processes — query it instead of guessing: run \`"${hiveNode}" "${kgCli}" search "<query>"\` for ranked passages, \`"${hiveNode}" "${kgCli}" list\` to see what is available, and \`"${hiveNode}" "${kgCli}" get <id>\` for a full document. (That first path is the harness's bundled Node — use it instead of bare \`node\`, which may not be on your PATH.)`
       : '';
     const godLine = meta.isGod
-      ? 'You are the GOD / ORCHESTRATOR of this hive — your job is to ORCHESTRATE, not to implement: maintain live situational awareness and delegate the work. (1) AWARENESS — always know what is going on: keep an accurate picture of every agent (active vs archived/idle), the task board, and all in-flight work; drain your inbox continually and triage every other agent\'s requests, answering clarifications so the team runs autonomously. (2) DELEGATE — decompose work and fan it out to the hive agents via their inboxes (route messages and assign owners; do not do their jobs); do NOT take on grunt implementation yourself. Stay aware of who is already on the floor and delegate OPPORTUNISTICALLY: BEFORE you spawn anything, CHECK THE LIVE ROSTER (active agents in registry.json + their state in fleet.json) and prefer routing to an EXISTING agent that fits — above all when the request names one ("ask Pam to…", "have Jim…"), route to that agent instead of reflexively creating a new one. Reuse an idle or already-running agent whose role matches; only spawn a fresh agent when no existing one is a sensible fit, and say that you checked. One capable owner beats a duplicate. (3) OWN ONLY THE IMPORTANT, high-leverage things — task decomposition, dispatch decisions, sign-offs, conflict resolution, branch integration, and final QA — and remain the sole scribe of board.md. You are otherwise fully autonomous — there is NO separate approval queue. For the genuinely critical (destructive actions, spending real money, scope changes, unresolvable conflicts), ask the human directly in your own session and let the tool-permission prompt gate the action; the human approves natively, including remotely from their phone via /remote-control. Keep the team unblocked. When you DISPATCH a task, write it as a 4-part contract so the agent can run autonomously: (1) OBJECTIVE — the concrete goal; (2) OUTPUT — the expected deliverable/format; (3) TOOLS — what to use or avoid, and any references to read instead of re-deriving; (4) BOUNDARIES — scope limits + the definition of done. Pass references (file paths, message ids, board sections), not pasted content — keep dispatches short.'
-        + ` MONITOR the floor by reading ${inRoot('fleet.json')} (live per-agent tokens, cost, status, last tool, breaker level, inbox backlog) and ${inRoot('registry.json')} — note that running 'claude agents' will NOT list your hive's sibling agents. A full Claude Code command reference is at ${inRoot('COMMANDS.md')} (slash commands act ONLY on your own session; CLI commands run in your shell and can target the fleet). You periodically receive scheduler / "Heartbeat" standup requests — on each, review every agent via fleet.json, re-engage anyone stalled, over-budget, or breaker-armed, and keep board.md and tasks.json accurate. In tasks.json, ALWAYS set each task's "assignee" to the worker's agent id the moment you dispatch it, and NEVER clear it on status changes — a done card must still say who did the work (the human reads the board by who-did-what). HUMAN FEEDBACK is first-class in the ledger: when a task can only proceed with the human's input — a QUESTION to answer OR an ACTION only the human can perform (create an account, approve a purchase, provide credentials/screenshots, test on their device) — set its status to "blocked" and append the concrete ask to the card's "humanQA" array (push {"q":"...","askedAt":"<iso>"}; phrase actions as clear to-dos; keep every past entry — the history documents the card's decisions). The harness surfaces open questions on the office floor's ASK ME board; the human's answer lands in the same entry ("a") AND arrives as an inbox message to you — read it, act on it, and unblock the card so work continues. Do NOT park human questions in separate files (no HumanQuestion.md) and never sit waiting on the human in your own session. Steward the token budget.`
+      ? `ORCHESTRATOR CONTRACT: own decomposition, dispatch, sign-off, conflict resolution, integration, final QA, and ${inRoot('board.md')}; delegate ordinary implementation. Before spawning, inspect the LIVE ROSTER (${inRoot('fleet.json')} + ${inRoot('registry.json')}) and reuse a capable active agent; spawn only for a genuinely independent lane. Dispatch with four short fields: OBJECTIVE, OUTPUT, TOOLS, BOUNDARIES; pass paths/message ids instead of copied bodies. Keep ${inRoot('tasks.json')} accurate and retain each task's assignee after completion. If only the human can proceed, mark the task blocked and add the concrete ask to humanQA; ask the human directly only for destructive actions, spending, scope changes, or unresolved conflicts. Scheduler checks are actionable only when task, roster, inbox, or breaker facts changed or are risky; never record a no-change check in memory.md.`
       : meta.isAssistant
       ? 'You are Michael\'s PREP ASSISTANT. You will be handed short, possibly vague instructions (each begins with "ENRICH TASK:"). For each one: (1) figure out which project it concerns and cd into the most relevant repo — you start in Michael\'s home directory; (2) gather concrete context READ-ONLY (exact file paths, current state, relevant code, conventions, active branch, gotchas) — NEVER modify, create, or delete files; (3) rewrite the instruction into ONE clear, self-contained prompt that Michael can execute autonomously, preserving the user\'s original intent without inventing scope. Then deliver it: write ONE message JSON into your outbox with "to":"god", "act":"request", a short subject, and the finished prompt as the body. Do NOT perform the task yourself — your only output is the improved prompt sent to Michael.'
       : 'For anything ambiguous, cross-cutting, or needing sign-off, address a message to "god".';
-    const guardrailsLine = 'Guardrails: a circuit breaker watches the floor — a "Circuit breaker: steer/constrain" message means you are looping or overspending, so STOP repeating, summarize what you tried, and follow it. Be token-frugal (a floor-wide or per-agent token budget can pause you). The shared plan has two parts: board.md (freeform; god is the sole scribe) and tasks.json (structured kanban — todo/doing/blocked/done).';
+    const guardrailsLine = 'Guardrails: obey circuit-breaker steer/constrain messages, stop repetition, and conserve tokens. Shared state is board.md plus tasks.json (todo/doing/blocked/done).';
     const slackLine = meta.isGod
-      ? 'SLACK REPLIES: When composing a Slack reply (or writing the `result` field of a Slack-origin kanban card), you MUST: (1) directly address what the user asked — never a bare "done"; (2) include the relevant specifics, outcome, and details; (3) format for Slack mrkdwn — open with a short *bold* headline, use bullet points for multiple items, wrap code/paths in `backtick` blocks, keep it concise (no walls of text). When finishing a Slack-origin task, always write a complete, user-facing, well-formatted `result` on the kanban card — the system posts it verbatim to Slack as the done reply.'
-      : `SLACK REPLIES: If god dispatches you a task that came from Slack, it will include an exact \`"${hiveNode}" "<helper>" --channel … --thread … --text "…"\` reply command — when you finish, run it VERBATIM to post your result back to that thread yourself. The reply must be SUBSTANTIVE Slack mrkdwn (a short *bold* headline + the actual outcome/specifics/links), NEVER a bare "done".`;
+      ? 'SLACK: for Slack-origin work, put a concise, substantive mrkdwn answer in the task result; never reply with bare "done".'
+      : `SLACK: for Slack-origin work, run the supplied \`"${hiveNode}" "<helper>" …\` reply command verbatim and send a substantive mrkdwn result, never bare "done".`;
     const languageLine = meta.replyLanguage === 'zh-CN'
       ? '回复语言合同：除文件名、JSON 字段、枚举、Hook、CLI 命令、代码、路径和逐字引用外，所有面向人类及 Agent 的说明、任务报告、问题与 Hive 消息都使用简体中文。不要翻译机器合同。'
       : 'Reply-language contract: use English for human-facing explanations, reports, questions, and Hive messages; never translate machine fields, commands, code, paths, or literal quotations.';
     return [
-      `You are "${meta.name}" (${meta.id}), an autonomous agent in a collaborating hive of AI agents.`,
-      `Your private workspace is ${dir}. The shared hive is ${root}. Full protocol: ${inRoot('PROTOCOL.md')}.`,
+      `You are "${meta.name}" (${meta.id}), role "${meta.role ?? (meta.isGod ? 'orchestrator' : 'agent')}"${meta.capabilities?.length ? `, capabilities: ${meta.capabilities.join(', ')}` : ''}. Stable identity: ${inDir('identity.md')}.`,
+      `Private workspace: ${dir}. Shared hive: ${root}. Full protocol (read on demand): ${inRoot('PROTOCOL.md')}.`,
       languageLine,
       '',
       'HIVE PROTOCOL — follow it every task:',
       `1. At the START of a task, read ${inDir('memory.md')} and EVERY file in ${inDir('inbox')} (messages other agents sent you). After handling an inbox message, move its file into ${inDir('inbox', '.done')}.`,
-      `2. Record durable facts, decisions, and context by appending to ${inDir('memory.md')}.`,
+      `2. Append only new, durable facts or decisions to ${inDir('memory.md')}; never append heartbeat, no-change, or repeated status text.`,
       `3. To ask another agent for something or share information, write ONE message JSON into ${inDir('outbox')} (schema in PROTOCOL.md). NEVER write into another agent's folder — the orchestrator delivers your outbox.`,
-      '4. At the END of a task, append what you learned to memory.md so future-you remembers.',
+      '4. At task end, update memory.md only when something durable changed.',
       guardrailsLine,
       memoryLine,
       knowledgeLine,
@@ -2072,22 +2077,10 @@ export class HiveManager {
     } catch { return false; }
   }
 
-  /**
-   * A compact, one-shot LIVE ROSTER line built from `fleet.json` — injected into
-   * god's context as `additionalContext` on SessionStart and every
-   * UserPromptSubmit (see HookServer).
-   *
-   * Why: fleet.json/registry.json are always fresh on disk (8s snapshot +
-   * archiveOrphanedAgents on boot + PTY-exit archiving), but god's CONTEXT is not.
-   * After an app restart god resumes a session whose transcript still describes
-   * the OLD floor, and it will happily message agents that no longer exist. It is
-   * told to read fleet.json, but "told to" is not "always knows" — so we push the
-   * truth in on every turn instead. One line, so the cost is negligible.
-   *
-   * Returns null when there is nothing to say (no hive, no snapshot, no agents),
-   * so the hook stays a no-op rather than injecting noise.
-   */
-  rosterContext(): string | null {
+  /** Build a compact semantic roster for hook injection. Volatile telemetry
+   * (time, tokens, cost, last tool/activity) is intentionally excluded from both
+   * text and signature so it cannot invalidate prompt context every turn. */
+  rosterContextSnapshot(): RosterContextSnapshot | null {
     const root = this.root();
     if (!root) return null;
     try {
@@ -2095,43 +2088,44 @@ export class HiveManager {
       const snap = JSON.parse(raw) as {
         ts?: number;
         agents?: Array<{
-          id: string; name?: string; role?: string; isGod?: boolean;
-          breaker?: string; tokens?: number; usd?: number;
-          lastTool?: string | null; lastActiveSecAgo?: number | null; inboxBacklog?: number;
+          id: string; name?: string; role?: string; status?: string; isGod?: boolean;
+          breaker?: string; inboxBacklog?: number;
         }>;
       };
-      const agents = Array.isArray(snap.agents) ? snap.agents : [];
+      const agents = Array.isArray(snap.agents)
+        ? [...snap.agents].sort((a, b) => a.id.localeCompare(b.id))
+        : [];
       if (!agents.length) return null;
-
-      const ago = (s: number | null | undefined): string =>
-        typeof s !== 'number' ? 'unknown'
-          : s < 90 ? `${s}s ago`
-            : s < 5400 ? `${Math.round(s / 60)}m ago`
-              : `${Math.round(s / 3600)}h ago`;
-
-      // Cap the list so a big floor can't crowd out the actual prompt. The
-      // remainder is still counted, and fleet.json is one Read away.
       const MAX = 24;
       const shown = agents.slice(0, MAX);
       const rows = shown.map((a) => {
-        const bits = [a.role ?? 'agent',
-          typeof a.lastActiveSecAgo === 'number' ? `active ${ago(a.lastActiveSecAgo)}` : 'no activity yet'];
-        if (a.tokens) bits.push(`${Math.round(a.tokens / 1000)}k tok`);
-        if (a.usd) bits.push(`$${a.usd.toFixed(2)}`);
+        const bits = [a.role ?? 'agent', a.status ?? 'unknown'];
         if (a.inboxBacklog) bits.push(`inbox ${a.inboxBacklog}`);
         if (a.breaker && a.breaker !== 'ok' && a.breaker !== 'none') bits.push(`breaker ${a.breaker}`);
         if (a.isGod) bits.push('you');
-        return `${a.id}${a.name ? ` "${a.name}"` : ''} (${bits.join(', ')})`;
+        return `${a.id}${a.name ? ` "${a.name}"` : ''}(${bits.join(',')})`;
       });
-      const more = agents.length > shown.length ? ` +${agents.length - shown.length} more` : '';
-      const age = typeof snap.ts === 'number' ? ago(Math.round((Date.now() - snap.ts) / 1000)) : 'unknown';
-
-      return `[LIVE ROSTER — auto-injected from ${join(root, 'fleet.json')}, snapshot ${age}] `
-        + `${agents.length} ACTIVE agent(s): ${rows.join('; ')}.${more} `
-        + 'This is the CURRENT floor and it SUPERSEDES any roster earlier in this conversation — '
-        + 'agents you remember that are absent here have been archived or killed, so do not message them. '
-        + 'Route work to someone on this list before spawning anyone new.';
+      const more = agents.length > shown.length ? `;+${agents.length - shown.length} more` : '';
+      const semantic = agents.map((a) => ({
+        id: a.id,
+        name: a.name ?? '',
+        role: a.role ?? 'agent',
+        status: a.status ?? 'unknown',
+        isGod: !!a.isGod,
+        breaker: a.breaker ?? 'none',
+        inboxBacklog: a.inboxBacklog ?? 0,
+      }));
+      return {
+        signature: createHash('sha256').update(JSON.stringify(semantic)).digest('hex'),
+        text: `[LIVE ROSTER — ${join(root, 'fleet.json')}] ${rows.join(';')}${more}. `
+          + 'This supersedes earlier rosters; reuse a listed agent before spawning.',
+      };
     } catch { return null; }
+  }
+
+  /** Compatibility helper for callers/tests that only need the text. */
+  rosterContext(): string | null {
+    return this.rosterContextSnapshot()?.text ?? null;
   }
   logTail(n = 200): unknown[] {
     const root = this.root();
@@ -2346,7 +2340,7 @@ only thing that moves messages between agents.
 
 ## Your workspace — \`agents/<your-id>/\`
 - \`identity.md\`  — who you are (read-only; the harness writes it).
-- \`memory.md\`    — your long-term memory. Read at the start of a task; append to it as you learn.
+- \`memory.md\`    — durable long-term facts and decisions. Never append heartbeat, no-change checks, or repeated status.
 - \`inbox/\`       — messages addressed to you. Read them at the start of a task.
 - \`inbox/.done/\` — move a message here once you've handled it.
 - \`outbox/\`      — drop messages here to send them. The harness delivers them.
@@ -2428,7 +2422,7 @@ const PROTOCOL_MD_ZH = `# Hive 协作协议
 
 ## 你的工作区 — \`agents/<your-id>/\`
 - \`identity.md\`  — 身份与角色说明（只读，由 Harness 生成）。
-- \`memory.md\`    — 长期记忆；任务开始时读取，获得持久事实后追加。
+- \`memory.md\`    — 持久事实与决策；不要追加心跳、无变化检查或重复状态。
 - \`inbox/\`       — 发给你的消息；任务开始时读取。
 - \`inbox/.done/\` — 已处理消息移到这里。
 - \`outbox/\`      — 向其它 Agent 发消息时，把消息写在这里，由 Harness 投递。

@@ -118,3 +118,36 @@ export async function paintThemeCharacterPortrait(
   );
   return true;
 }
+
+/** Paint one complete, down-facing idle frame from the same cast atlas used on
+ * the floor. Compact agent cards use this instead of a bust crop, so boots and
+ * silhouette remain visible when a skin changes. */
+export async function paintThemeCharacterFullBody(
+  ctx: CanvasRenderingContext2D,
+  name: OfficeCharacterName,
+  scale: number,
+  theme: CharacterThemeId,
+): Promise<boolean> {
+  const urls = THEME_ASSETS[theme];
+  if (!urls) return false;
+  const image = await loadImage(urls.cast);
+  const index = characterIndex(name);
+  const characterRow = Math.floor(index / CHARACTER_COLUMNS);
+  const characterColumn = index % CHARACTER_COLUMNS;
+  const originX = characterColumn * FRAME_W * FRAME_COLUMNS;
+  const originY = characterRow * FRAME_H * DIRECTION_ROWS;
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, FRAME_W * scale, FRAME_H * scale);
+  ctx.drawImage(
+    image,
+    originX,
+    originY,
+    FRAME_W,
+    FRAME_H,
+    0,
+    0,
+    FRAME_W * scale,
+    FRAME_H * scale,
+  );
+  return true;
+}

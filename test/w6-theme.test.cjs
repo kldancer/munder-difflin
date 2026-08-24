@@ -26,6 +26,9 @@ test('theme picker validates before persistence and never tears down agents', ()
   assert.match(picker, /PTYs, sessions, queues, memory and worktrees remain untouched/);
   assert.match(picker, /const current = useStore\(\(s\) => s\.officeTheme\)/);
   assert.doesNotMatch(picker, /useState<ThemeId>/);
+  assert.doesNotMatch(picker, /swatch/);
+  assert.match(picker, /registeredTheme\?\.backgroundUrl/);
+  assert.match(picker, /backgroundSize: 'cover'/);
 });
 
 test('failed theme loads are explicit instead of silently claiming office success', () => {

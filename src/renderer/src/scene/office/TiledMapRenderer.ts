@@ -32,6 +32,7 @@ export interface TiledObject {
   y: number;
   width?: number;
   height?: number;
+  properties?: Array<{ name: string; type?: string; value: unknown }>;
 }
 
 export interface TiledTilesetRef {
@@ -45,12 +46,15 @@ export interface TiledTilesetRef {
 }
 
 export interface ZoneRect { x: number; y: number; width: number; height: number; }
+export interface OcclusionRect extends ZoneRect { name: string; baseline: number; }
 export interface Point { x: number; y: number; }
 
 const TILE_LAYERS = ['floor', 'walls', 'furniture-below', 'furniture-above'] as const;
 const COLLISION_LAYER = 'collision';
 const COLLISION_GEOMETRY_LAYER = 'collision-geometry';
 const SPAWN_POINTS_LAYER = 'spawn-points';
+const ACTIVITY_POINTS_LAYER = 'activity-points';
+const OCCLUSION_GEOMETRY_LAYER = 'occlusion-geometry';
 const ZONES_LAYER = 'zones';
 
 export class TiledMapRenderer {
@@ -61,6 +65,8 @@ export class TiledMapRenderer {
   private walkabilityGrid: boolean[][] = [];
   private collisionRects: ZoneRect[] = [];
   private spawnPoints: Map<string, Point> = new Map();
+  private activityPoints: Map<string, Point> = new Map();
+  private occlusionRects: OcclusionRect[] = [];
   private zones: Map<string, ZoneRect> = new Map();
   private characterContainer: Container;
   private rootContainer: Container;
@@ -78,6 +84,8 @@ export class TiledMapRenderer {
     this.parseCollisionGeometry();
     this.parseCollisionLayer();
     this.parseSpawnPoints();
+    this.parseActivityPoints();
+    this.parseOcclusionGeometry();
     this.markWalkableSpawnPoints();
     this.parseZones();
     this.buildTileLayers();
@@ -85,6 +93,10 @@ export class TiledMapRenderer {
 
   getContainer(): Container { return this.rootContainer; }
   getCharacterContainer(): Container { return this.characterContainer; }
+  /** Immutable-by-copy view of the art-aligned static colliders. These own
+   *  physical blocking only; visible foreground clips have an independent
+   *  authored layer because collision volume and painted front face differ. */
+  getCollisionRects(): ZoneRect[] { return this.collisionRects.map((rect) => ({ ...rect })); }
 
   isWalkable(tx: number, ty: number): boolean {
     if (tx < 0 || ty < 0 || tx >= this.width || ty >= this.height) return false;
@@ -109,6 +121,31 @@ export class TiledMapRenderer {
     return true;
   }
 
+  /** Sweep the feet circle along one movement step. Checking only the endpoint
+   *  can tunnel across a thin wall after a long renderer frame; bounded samples
+   *  at half-radius spacing keep the existing lightweight collision model while
+   *  closing that gap without introducing a physics engine. */
+  isFootprintPathWalkable(
+    fromPx: number,
+    fromPy: number,
+    toPx: number,
+    toPy: number,
+    radius: number,
+  ): boolean {
+    const distance = Math.hypot(toPx - fromPx, toPy - fromPy);
+    const sampleSpacing = Math.max(1, radius / 2);
+    const steps = Math.max(1, Math.ceil(distance / sampleSpacing));
+    for (let step = 1; step <= steps; step++) {
+      const t = step / steps;
+      if (!this.isFootprintWalkable(
+        fromPx + (toPx - fromPx) * t,
+        fromPy + (toPy - fromPy) * t,
+        radius,
+      )) return false;
+    }
+    return true;
+  }
+
   tileToPixel(tx: number, ty: number): Point {
     return { x: tx * this.tileSize, y: ty * this.tileSize };
   }
@@ -119,6 +156,9 @@ export class TiledMapRenderer {
 
   getSpawnPoint(name: string): Point | undefined { return this.spawnPoints.get(name); }
   getAllSpawnPoints(): Map<string, Point> { return this.spawnPoints; }
+  getActivityPoint(name: string): Point | undefined { return this.activityPoints.get(name); }
+  getAllActivityPoints(): Map<string, Point> { return new Map(this.activityPoints); }
+  getOcclusionRects(): OcclusionRect[] { return this.occlusionRects.map((rect) => ({ ...rect })); }
   getZone(name: string): ZoneRect | undefined { return this.zones.get(name); }
   getAllZones(): Map<string, ZoneRect> { return this.zones; }
 
@@ -153,7 +193,19 @@ export class TiledMapRenderer {
   private parseCollisionLayer(): void {
     const layer = this.findLayer(COLLISION_LAYER, 'tilelayer');
     this.walkabilityGrid = Array.from({ length: this.height }, () => Array(this.width).fill(true));
-    if (!layer?.data) return;
+    if (!layer?.data) {
+      // Full-bitmap themes intentionally omit a duplicated coarse collision
+      // tile layer. Project their authoritative fine geometry onto tile-centre
+      // foot anchors so global BFS and local 3.5px collision share one source.
+      for (let y = 0; y < this.height; y++) {
+        for (let x = 0; x < this.width; x++) {
+          const px = x * this.tileSize + this.tileSize / 2;
+          const py = y * this.tileSize + this.tileSize;
+          this.walkabilityGrid[y][x] = this.isFootprintWalkable(px, py, 3.5);
+        }
+      }
+      return;
+    }
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const rawId = layer.data[y * this.width + x];
@@ -181,6 +233,30 @@ export class TiledMapRenderer {
         x: Math.floor(obj.x / this.tileSize),
         y: Math.floor(obj.y / this.tileSize),
       });
+    }
+  }
+
+  private parseActivityPoints(): void {
+    const layer = this.findLayer(ACTIVITY_POINTS_LAYER, 'objectgroup');
+    if (!layer?.objects) return;
+    for (const obj of layer.objects) {
+      this.activityPoints.set(obj.name, {
+        x: Math.floor(obj.x / this.tileSize),
+        y: Math.floor(obj.y / this.tileSize),
+      });
+    }
+  }
+
+  private parseOcclusionGeometry(): void {
+    const layer = this.findLayer(OCCLUSION_GEOMETRY_LAYER, 'objectgroup');
+    this.occlusionRects = [];
+    for (const obj of layer?.objects ?? []) {
+      const width = obj.width ?? 0;
+      const height = obj.height ?? 0;
+      if (width <= 0 || height <= 0) continue;
+      const baselineValue = obj.properties?.find((property) => property.name === 'baseline')?.value;
+      const baseline = typeof baselineValue === 'number' ? baselineValue : obj.y + height;
+      this.occlusionRects.push({ name: obj.name, x: obj.x, y: obj.y, width, height, baseline });
     }
   }
 

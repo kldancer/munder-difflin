@@ -3,8 +3,8 @@
 /**
  * God has to know the LIVE floor across its own restarts — a roster it read once
  * goes stale, and it then messages agents that were archived or killed. So the
- * roster is PUSHED into god's context (SessionStart + every prompt) rather than
- * pulled.
+ * roster is PUSHED into god's context on SessionStart and only when its semantic
+ * facts change after that. Volatile telemetry must not spend prompt context.
  *
  * Only one `additionalContext` may be returned per hook, so the roster and the
  * operator-steer path must MERGE — otherwise they silently displace each other.
@@ -55,16 +55,16 @@ function snapshot(hive) {
   hive.writeFleetSnapshot({
     ts: Date.now() - 4000,
     agents: [
-      { id: 'god-1', name: 'Michael', role: 'orchestrator', isGod: true, breaker: 'ok', tokens: 812_400, usd: 4.2199, lastActiveSecAgo: 6, inboxBacklog: 2 },
-      { id: 'jim-1', name: 'Jim', role: 'agent', breaker: 'warn', tokens: 120_401, usd: 1.0231, lastActiveSecAgo: 240, inboxBacklog: 0 },
-      { id: 'pam-1', name: 'Pam', role: 'agent', breaker: 'ok', tokens: 0, usd: 0, lastActiveSecAgo: null, inboxBacklog: 0 }
+      { id: 'god-1', name: 'Michael', role: 'orchestrator', status: 'working', isGod: true, breaker: 'ok', tokens: 812_400, usd: 4.2199, lastActiveSecAgo: 6, inboxBacklog: 2 },
+      { id: 'jim-1', name: 'Jim', role: 'agent', status: 'blocked', breaker: 'warn', tokens: 120_401, usd: 1.0231, lastActiveSecAgo: 240, inboxBacklog: 0 },
+      { id: 'pam-1', name: 'Pam', role: 'agent', status: 'idle', breaker: 'ok', tokens: 0, usd: 0, lastActiveSecAgo: null, inboxBacklog: 0 }
     ]
   });
 }
 
 const context = (res) => res?.hookSpecificOutput?.additionalContext ?? '';
 
-test('the roster line carries the whole floor and its state', async (t) => {
+test('the roster line carries compact semantic floor state only', async (t) => {
   const { hive } = await floor(t);
   assert.equal(hive.rosterContext(), null, 'no snapshot yet — inject nothing rather than noise');
 
@@ -73,23 +73,30 @@ test('the roster line carries the whole floor and its state', async (t) => {
 
   assert.ok(!line.includes('\n'), 'must stay a single compact line');
   for (const id of ['god-1', 'jim-1', 'pam-1']) assert.ok(line.includes(id), `missing ${id}`);
-  assert.match(line, /812k tok/);
-  assert.match(line, /\$4\.22/);
+  assert.doesNotMatch(line, /tok|\$4\.22|ago|snapshot/i);
   assert.match(line, /inbox 2/);
   assert.match(line, /breaker warn/);
   assert.match(line, /god-1[^;]*you/, 'god has to be able to spot itself');
-  assert.match(line, /no activity yet/, 'an agent that never ran must not read as "active never"');
-  assert.match(line, /SUPERSEDES/, 'the point is to override what god remembers');
-  assert.ok(line.length < 1200, `too long for a 3-agent floor: ${line.length} chars`);
+  assert.match(line, /working|blocked|idle/);
+  assert.match(line, /supersedes/i, 'the point is to override what god remembers');
+  assert.ok(line.length < 500, `too long for a 3-agent floor: ${line.length} chars`);
 });
 
-test('god gets the roster on SessionStart and on every prompt — nobody else does', async (t) => {
+test('god gets roster at SessionStart, then only after semantic change', async (t) => {
   const { hive, fire } = await floor(t);
   snapshot(hive);
 
   const start = await fire('god-1', 'SessionStart');
   assert.match(context(start), /LIVE ROSTER/);
   assert.equal(start.hookSpecificOutput.hookEventName, 'SessionStart');
+  assert.doesNotMatch(context(await fire('god-1', 'UserPromptSubmit')), /LIVE ROSTER/);
+
+  snapshot(hive); // timestamp/token/activity changed, semantic facts did not
+  assert.doesNotMatch(context(await fire('god-1', 'UserPromptSubmit')), /LIVE ROSTER/);
+
+  const snap = JSON.parse(fs.readFileSync(path.join(hive.root(), 'fleet.json'), 'utf8'));
+  snap.agents.find((a) => a.id === 'jim-1').status = 'working';
+  hive.writeFleetSnapshot(snap);
   assert.match(context(await fire('god-1', 'UserPromptSubmit')), /LIVE ROSTER/);
 
   assert.doesNotMatch(context(await fire('jim-1', 'SessionStart')), /LIVE ROSTER/);
@@ -103,6 +110,10 @@ test('a queued operator steer is not swallowed by the roster', async (t) => {
   const { hive, fire } = await floor(t, { steer });
   snapshot(hive);
 
+  await fire('god-1', 'SessionStart');
+  const snap = JSON.parse(fs.readFileSync(path.join(hive.root(), 'fleet.json'), 'utf8'));
+  snap.agents.push({ id: 'kevin-1', name: 'Kevin', role: 'reviewer', status: 'idle', breaker: 'ok' });
+  hive.writeFleetSnapshot(snap);
   const ctx = context(await fire('god-1', 'UserPromptSubmit'));
   assert.match(ctx, /LIVE ROSTER/);
   assert.ok(ctx.includes(steer), 'only one additionalContext exists — the two must merge, not race');

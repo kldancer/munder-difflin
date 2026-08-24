@@ -13,7 +13,8 @@ import { pickSoloLine, pickExchange, type BreakSpot } from './cafeteriaLines';
 import { colors } from '@/design/tokens';
 import { loadTheme, resolveThemeMap, themeTilesetUrls } from './themeLoader';
 import { installContextLossRecovery } from './glRecovery';
-import { createThemeVisuals } from './themeVisuals';
+import { createThemeForegroundOccluders, createThemeVisuals } from './themeVisuals';
+import { localizeActivityText } from '@/utils/activityText';
 import type { Tile, Facing, ErrandKind, ErrandSpot } from './themeRegistry';
 
 // The map, tileset atlases, desk-claim order, errand spots, coffee-economy
@@ -81,7 +82,7 @@ interface Runtime {
 const CHEER_MIN_BUSY_MS = 60_000;
 
 /** What an avatar mutters per errand, picked at random. */
-const ERRAND_THOUGHTS: Record<ErrandKind, readonly string[]> = {
+const ERRAND_THOUGHTS_EN: Record<ErrandKind, readonly string[]> = {
   water:     ['watering the plants 🌿', 'giving the plants a drink', 'they grow so fast'],
   window:    ['letting some air in 🍃', 'a bit of fresh air', 'nice breeze today'],
   dispenser: ['getting some water 💧', 'hydration break', 'staying sharp'],
@@ -90,10 +91,19 @@ const ERRAND_THOUGHTS: Record<ErrandKind, readonly string[]> = {
   bin:       ['out with the scrap paper 🗑️', 'desk cleanup day', 'tidying up a little'],
   smoke:     ['the floor runs itself 🚬', 'boss break.', 'thinking big thoughts 🚬', 'I DECLARE… a break']
 };
+const ERRAND_THOUGHTS_ZH: Record<ErrandKind, readonly string[]> = {
+  water: ['给植物浇水 🌿', '植物也该喝水了', '长得真快'],
+  window: ['开窗透透气 🍃', '呼吸一点新鲜空气', '今天风很舒服'],
+  dispenser: ['去接杯水 💧', '补水休息一下', '保持清醒'],
+  fridge: ['冰箱里有什么？', '谁拿走了我的酸奶？', '我就看看……'],
+  shelf: ['整理一下书架 📚', '看看有没有新资料', '这些资料很有用'],
+  bin: ['清理废纸 🗑️', '整理一下工位', '顺手收拾干净'],
+  smoke: ['办公室运转正常 🚬', '管理者休息时间', '思考一个大问题 🚬', '我宣布……休息一下'],
+};
 
 /** What workers blurt out when the boss walks by — performative excellence.
  *  `{done}` is replaced with that worker's REAL done-task count. */
-const SUCK_UP_LINES = [
+const SUCK_UP_LINES_EN = [
   'already shipped {done} tasks, Michael. raise? 🥺',
   '{done} tasks done this week, boss!',
   'great vision as always, boss!',
@@ -102,9 +112,16 @@ const SUCK_UP_LINES = [
   'working hard, boss! 💪',
   'best boss ever. genuinely.'
 ] as const;
+const SUCK_UP_LINES_ZH = [
+  '已经完成 {done} 个任务了，Michael！',
+  '本周已交付 {done} 个任务，老板！',
+  '这个方向很清楚，老板。',
+  '我正准备这样做！',
+  '进展顺利，老板！💪',
+] as const;
 
 /** What they actually say once he's out of earshot. */
-const GOSSIP_LINES = [
+const GOSSIP_LINES_EN = [
   'has he ever actually written code?',
   "another 'quick sync' that took an hour…",
   "'world's best boss' — he bought that mug himself",
@@ -113,11 +130,21 @@ const GOSSIP_LINES = [
   'he watered the plant. ONE plant. his own.',
   "did you hear him? 'I DECLARE… a break'"
 ] as const;
+const GOSSIP_LINES_ZH = [
+  '刚才那个同步会是不是有点长？',
+  '这个任务其实可以更简单。',
+  '他又把一句话变成了三张卡。',
+  '先把当前 Gate 做完吧。',
+  '今天的构建应该能一次通过。',
+] as const;
 
 /** Lines an avatar throws over its shoulder right after finishing a task. */
-const CHEER_LINES = [
+const CHEER_LINES_EN = [
   'done! ✔', 'nailed it', "that's a wrap", 'ship it 🚀', 'another one done',
   'crushed it', 'in the books'
+] as const;
+const CHEER_LINES_ZH = [
+  '完成！✔', '顺利拿下', '可以收尾了', '交付 🚀', '又完成一个', '验证通过', '已归档',
 ] as const;
 
 /** Load a texture via an <img> element. Unlike Pixi's Assets.load(), this
@@ -142,7 +169,7 @@ function loadTexture(url: string): Promise<Texture> {
  *  with nothing concrete yet — the bubble renders an animated "…" for that. */
 function liveActivity(agent: Agent, fallback = ''): string {
   const action = (agent.action || '').trim();
-  if (action) return action;
+  if (action) return localizeActivityText(action);
   return firstWords(agent.lastPrompt) || fallback;
 }
 
@@ -231,6 +258,12 @@ export function OfficeFloor() {
     const init = async () => {
       // Load the active theme bundle (falls back to 'office' on a bad/absent bundle).
       const theme = await loadTheme(officeTheme);
+      const zhAmbient = document.documentElement.lang.toLowerCase().startsWith('zh');
+      const ambient = (zh: string, en: string): string => zhAmbient ? zh : en;
+      const errandThoughts = zhAmbient ? ERRAND_THOUGHTS_ZH : ERRAND_THOUGHTS_EN;
+      const suckUpLines = zhAmbient ? SUCK_UP_LINES_ZH : SUCK_UP_LINES_EN;
+      const gossipLines = zhAmbient ? GOSSIP_LINES_ZH : GOSSIP_LINES_EN;
+      const cheerLines = zhAmbient ? CHEER_LINES_ZH : CHEER_LINES_EN;
       await app.init({
         background: hexNum(theme.palette.background),
         antialias: false,
@@ -299,6 +332,14 @@ export function OfficeFloor() {
       );
       root.addChildAt(visuals, Math.max(0, root.children.length - 1));
       const charLayer = mapRenderer.getCharacterContainer();
+      if (backgroundTexture) {
+        for (const occluder of createThemeForegroundOccluders(
+          backgroundTexture,
+          mapRenderer.getOcclusionRects(),
+          mapRenderer.width * mapRenderer.tileSize,
+          mapRenderer.height * mapRenderer.tileSize,
+        )) charLayer.addChild(occluder);
+      }
       const tileCount = mapRenderer.getContainer().children.reduce(
         (n, c) => n + ((c as Container).children?.length ?? 0), 0);
       console.log(`[OfficeFloor] map ${mapRenderer.width}x${mapRenderer.height}, ${tileCount} tile sprites rendered`);
@@ -338,7 +379,7 @@ export function OfficeFloor() {
         }
       }
       calG.rect(8, 11, 2, 2).fill(0xc94f4f);                  // today, circled red
-      charLayer.addChild(calG);
+      if (theme.scene?.embeddedControls !== false) charLayer.addChild(calG);
 
       // Build the ordered seat list once: PC desks + named desks first, then
       // conference-room chairs as overflow. Each agent claims one and stays there;
@@ -371,6 +412,13 @@ export function OfficeFloor() {
       // it needs the user. Collected as walkable tiles in rings around the door.
       const entrance = mapRenderer.getSpawnPoint('entrance')
         ?? { x: Math.floor(mapRenderer.width / 2), y: mapRenderer.height - 2 };
+      const activityPoints = [...mapRenderer.getAllActivityPoints()];
+      const bossActivityPoints = activityPoints
+        .filter(([name]) => name.startsWith('boss-'))
+        .map(([, point]) => point);
+      const staffActivityPoints = activityPoints
+        .filter(([name]) => name.startsWith('staff-'))
+        .map(([, point]) => point);
       const waitTiles: Tile[] = [];
       const waitSeen = new Set<string>();
       for (let radius = 0; radius <= 6 && waitTiles.length < 16; radius++) {
@@ -544,7 +592,7 @@ export function OfficeFloor() {
           if (phase === 'toTray') {
             if (cleanCups <= 0) {
               // Rack ran dry — every mug is parked on someone's desk.
-              c.showThought('no clean mugs left…');
+              c.showThought(ambient('没有干净杯子了……', 'no clean mugs left…'));
               rt.run = { phase: 'placing', timer: -1 }; // brief sulk, then move on
               return;
             }
@@ -553,11 +601,11 @@ export function OfficeFloor() {
             c.setCarryingCup(true);
             rt.run = { phase: 'taking', timer: 0 };
           } else if (phase === 'toMachine') {
-            c.showThought('brewing a fresh one ☕');
+            c.showThought(ambient('冲一杯新咖啡 ☕', 'brewing a fresh one ☕'));
             machineBusy = 2.6;
             rt.run = { phase: 'brewing', timer: 0 };
           } else if (phase === 'toSink') {
-            c.showThought('washing the mug');
+            c.showThought(ambient('清洗杯子', 'washing the mug'));
             sinkBusy = 2.4;
             rt.run = { phase: 'washing', timer: 0 };
           } else {
@@ -628,10 +676,10 @@ export function OfficeFloor() {
         // the proximity director below).
         const p = rt.character.getPixelPosition();
         if (godDistance(p.x, p.y) > 96 && Math.random() < 0.35) {
-          rt.character.showThought(GOSSIP_LINES[Math.floor(Math.random() * GOSSIP_LINES.length)]);
+          rt.character.showThought(gossipLines[Math.floor(Math.random() * gossipLines.length)]);
           return;
         }
-        rt.character.showThought(pickSoloLine(character, spot.spot, seed));
+        rt.character.showThought(pickSoloLine(character, spot.spot, seed, zhAmbient ? 'zh-CN' : 'en'));
       };
 
       // If the newcomer's table-mate is already lingering (and neither is mid-
@@ -647,7 +695,7 @@ export function OfficeFloor() {
         if (!prt?.brk || prt.brk.phase !== 'lingering') return false;
         if (rt.brk.chat || rt.brk.chattingWith || prt.brk.chat || prt.brk.chattingWith) return false;
         const character = agentById(id)?.character ?? DEFAULT_CHARACTER;
-        const lines = pickExchange(character, Math.floor(Math.random() * 1e6));
+        const lines = pickExchange(character, Math.floor(Math.random() * 1e6), zhAmbient ? 'zh-CN' : 'en');
         rt.brk.chat = { lines, partnerId, idx: 0, beat: 0 };
         prt.brk.chattingWith = id;
         return true;
@@ -933,7 +981,7 @@ export function OfficeFloor() {
           rt!.err.phase = 'doing';
           rt!.err.timer = 0;
           c.faceDirection(spot.facing);
-          const lines = ERRAND_THOUGHTS[spot.kind];
+          const lines = errandThoughts[spot.kind];
           c.showThought(lines[Math.floor(Math.random() * lines.length)]);
           const finish = (): void => {
             const wasGod = !!agent!.isGod;
@@ -995,7 +1043,7 @@ export function OfficeFloor() {
           if (Math.random() >= 0.6) continue;
           lastSuckUp.set(id, now);
           const done = doneByAssignee.get(id) ?? 0;
-          const pool = done > 0 ? SUCK_UP_LINES : SUCK_UP_LINES.slice(2);
+          const pool = done > 0 ? suckUpLines : suckUpLines.slice(2);
           const line = pool[Math.floor(Math.random() * pool.length)]
             .replace('{done}', String(done));
           rt.character.showThought(line);
@@ -1052,7 +1100,7 @@ export function OfficeFloor() {
         if (god) st.select(god.id);
         st.requestCommandCenterTab('tasks');
       });
-      charLayer.addChild(boardG);
+      if (theme.scene?.runtimeBoards !== false) charLayer.addChild(boardG);
       // One small Graphics per desk currently holding a taken note.
       const deskNoteG = new Map<string, Graphics>();
       const clearDeskNotes = (): void => {
@@ -1080,6 +1128,7 @@ export function OfficeFloor() {
       };
 
       const drawTaskBoard = (tasks: BoardTask[]): void => {
+        if (theme.scene?.runtimeBoards === false) return;
         boardG.clear();
         clearDeskNotes();
         const blocked = tasks.filter((t) => t.status === 'blocked').map(() => 'blocked');
@@ -1141,7 +1190,7 @@ export function OfficeFloor() {
         ev.stopPropagation();
         window.close(); // intercepted by the main process while PTYs are alive
       });
-      charLayer.addChild(clockG);
+      if (theme.scene?.embeddedControls !== false) charLayer.addChild(clockG);
 
       // ─── The ASK ME board: tasks waiting on the HUMAN, first class ─────────
       // Hangs on the right wall run (between the second doorway and the war
@@ -1161,10 +1210,11 @@ export function OfficeFloor() {
         if (god) st.select(god.id);
         st.requestCommandCenterTab('human');
       });
-      charLayer.addChild(askG);
+      if (theme.scene?.runtimeBoards !== false) charLayer.addChild(askG);
       let askCount = 0;
       let askPulse = 0;
       const drawAskBoard = (pulse: number): void => {
+        if (theme.scene?.runtimeBoards === false) return;
         askG.clear();
         // lilac-framed board with a big "?" identity
         askG.rect(0, -8, 30, 22).fill(0x5b4a6b);
@@ -1279,6 +1329,7 @@ export function OfficeFloor() {
 
       let moveWatchdog = 0;
       const updateBoardMoves = (dt: number): void => {
+        if (theme.scene?.runtimeBoards === false) return;
         // carried notes ride at the actor's hand
         for (const [id, g] of carriedNotes) {
           const rt = runtimes.get(id);
@@ -1340,6 +1391,11 @@ export function OfficeFloor() {
             askCount = newAsk;
             drawAskBoard(askPulse);
           }
+          if (theme.scene?.runtimeBoards === false) {
+            firstPoll = false;
+            lastLedger = ledger;
+            return;
+          }
           if (firstPoll) {
             // cold start: no theatre, just show the truth
             firstPoll = false;
@@ -1358,16 +1414,16 @@ export function OfficeFloor() {
             let mv: BoardMove | null = null;
             if (!old && (t.status === 'todo' || t.status === 'blocked')) {
               const actor = actorFor(undefined, true);
-              if (actor) mv = { kind: 'pin', taskId: t.id, actorId: actor, after, carryColor: NOTE_COLORS[t.status], stand: t.status === 'blocked' ? PIN_STAND : TAKE_STAND, thought: 'pinning a new task 📌' };
+              if (actor) mv = { kind: 'pin', taskId: t.id, actorId: actor, after, carryColor: NOTE_COLORS[t.status], stand: t.status === 'blocked' ? PIN_STAND : TAKE_STAND, thought: ambient('发布一个新任务 📌', 'pinning a new task 📌') };
             } else if (oldS !== 'doing' && t.status === 'doing') {
               const actor = actorFor(t.assignee, false);
-              if (actor && actor === t.assignee) mv = { kind: 'take', taskId: t.id, actorId: actor, after, carryColor: NOTE_COLORS.doing, stand: TAKE_STAND, thought: 'grabbing my task' };
+              if (actor && actor === t.assignee) mv = { kind: 'take', taskId: t.id, actorId: actor, after, carryColor: NOTE_COLORS.doing, stand: TAKE_STAND, thought: ambient('领取我的任务', 'grabbing my task') };
             } else if (t.status === 'done' && oldS !== 'done') {
               const actor = actorFor(old?.assignee ?? t.assignee, false);
-              if (actor) mv = { kind: 'archive', taskId: t.id, actorId: actor, after, carryColor: NOTE_COLORS.done, stand: ARCHIVE_STAND, thought: 'filing it as done ✔' };
+              if (actor) mv = { kind: 'archive', taskId: t.id, actorId: actor, after, carryColor: NOTE_COLORS.done, stand: ARCHIVE_STAND, thought: ambient('归档已完成任务 ✔', 'filing it as done ✔') };
             } else if (t.status === 'blocked' && oldS !== 'blocked') {
               const actor = actorFor(old?.assignee ?? t.assignee, false);
-              if (actor) mv = { kind: 'pin', taskId: t.id, actorId: actor, after, carryColor: NOTE_COLORS.blocked, stand: PIN_STAND, thought: 'this one is stuck 😤' };
+              if (actor) mv = { kind: 'pin', taskId: t.id, actorId: actor, after, carryColor: NOTE_COLORS.blocked, stand: PIN_STAND, thought: ambient('这个任务遇到阻塞了 😤', 'this one is stuck 😤') };
             }
             if (mv && !busyActors.has(mv.actorId) && !moveQueue.some((q) => q.actorId === mv!.actorId)) {
               if (!visualTasks.has(t.id) && mv.kind !== 'pin') visualTasks.set(t.id, { status: oldS ?? 'todo', assignee: old?.assignee });
@@ -1411,6 +1467,12 @@ export function OfficeFloor() {
           seatTile,
           seatDirection: facingForSeat(seatTile),
           spawnTile: entrance, // walk in from the office door
+          wanderTargets: agent.isGod ? bossActivityPoints : staffActivityPoints,
+          // Michael spends about two thirds of idle time at the command desk;
+          // staff keep the existing even desk/patrol cadence.
+          idleLingerSeconds: agent.isGod ? 20 : 30,
+          deskRestSeconds: agent.isGod ? 40 : 30,
+          cropSeatedLegs: theme.scene?.cropSeatedLegs !== false,
           isTileOccupied: (tile, selfId) => {
             for (const [id, runtime] of runtimes) {
               if (id === selfId || !runtime.character.isVisible) continue;
@@ -1559,11 +1621,11 @@ export function OfficeFloor() {
             // agents that need the human).
             c.setStatusGlyph('none');
             c.sitAtDesk(false);
-            c.showThought(liveActivity(agent, 'waiting'), agent.carrying);
+            c.showThought(liveActivity(agent, ambient('等待协作方', 'waiting')), agent.carrying);
             break;
           case 'blocked':
             c.setStatusGlyph('blocked');
-            c.showThought(liveActivity(agent, 'needs you'));
+            c.showThought(liveActivity(agent, ambient('需要你的决定', 'needs you')));
             c.walkToTile(rt.waitTile);
             break;
           case 'compacting':
@@ -1571,22 +1633,22 @@ export function OfficeFloor() {
             // so an agent compacting context reads as busy rather than frozen.
             c.setStatusGlyph('compacting');
             c.sitAtDesk(true);
-            c.showThought(liveActivity(agent, 'compacting context'));
+            c.showThought(liveActivity(agent, ambient('正在压缩上下文', 'compacting context')));
             break;
           case 'looping':
             // #5C — circuit-breaker armed (#6): hold position with the spinning
             // warning glyph so a runaway agent is visible on the floor.
             c.setStatusGlyph('looping');
             c.sitAtDesk(false);
-            c.showThought(liveActivity(agent, 'looping — breaker armed'));
+            c.showThought(liveActivity(agent, ambient('检测到循环，断路器已启用', 'looping — breaker armed')));
             break;
           case 'success':
             c.setStatusGlyph('success');
-            if (agent.isGod) { c.hideThought(); c.sitAtDesk(true); break; }
+            if (agent.isGod) { c.hideThought(); c.startWandering(); break; }
             c.startWandering();
             if (finishedWork) {
               c.cheer();
-              c.showThought(CHEER_LINES[Math.floor(Math.random() * CHEER_LINES.length)]);
+              c.showThought(cheerLines[Math.floor(Math.random() * cheerLines.length)]);
             } else {
               c.hideThought();
             }
@@ -1599,15 +1661,16 @@ export function OfficeFloor() {
           case 'idle':
           default:
             c.setStatusGlyph('none');
-            // The god runs the floor from its desk; everyone else wanders when idle.
-            if (agent.isGod) { c.sitAtDesk(true); c.showThought(liveActivity(agent, 'running the floor')); }
+            // Michael follows the map-authored command/briefing/patrol circuit;
+            // his 20s roam / 40s desk cadence keeps the command desk primary.
+            if (agent.isGod) { c.startWandering(); c.showThought(liveActivity(agent, ambient('统筹办公室', 'running the floor'))); }
             else if (finishedWork) {
               // Task done → a quick cheer on the spot, then back to roaming.
               c.startWandering();
               c.cheer();
-              c.showThought(CHEER_LINES[Math.floor(Math.random() * CHEER_LINES.length)]);
+              c.showThought(cheerLines[Math.floor(Math.random() * cheerLines.length)]);
             }
-            else { c.startWandering(); c.showThought(liveActivity(agent, 'idle')); }
+            else { c.startWandering(); c.showThought(liveActivity(agent, ambient('待命', 'idle'))); }
             break;
         }
       };

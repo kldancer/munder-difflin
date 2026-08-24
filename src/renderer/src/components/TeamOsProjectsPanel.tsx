@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
-  TeamOsPreparationCatalog,
   TeamOsProjectSnapshot,
   TeamOsReference,
-  TeamOsSnapshot
+  TeamOsSnapshot,
+  TeamOsWorkspaceSnapshot,
 } from '../../../main/teamOs';
+import type { TeamOsPlanningState } from '../../../main/teamOsPlanning';
+import { useStore } from '@/store/store';
 import { Icon } from './Icon';
 import { PixelButton } from './PixelButton';
-import { TeamOsWorkComposer } from './TeamOsWorkComposer';
 
 const statusColor: Record<TeamOsProjectSnapshot['status'], string> = {
   ready: 'var(--cth-mint)',
@@ -54,11 +55,13 @@ function ReferenceGroup({
 }
 
 function ProjectCard({
-  project, canPrepare, onPrepare
+  project, starting, onDiscuss, onStart, onInspectWorkspaces
 }: {
   project: TeamOsProjectSnapshot;
-  canPrepare: boolean;
-  onPrepare: () => void;
+  starting: boolean;
+  onDiscuss: () => void;
+  onStart: () => void;
+  onInspectWorkspaces: () => void;
 }) {
   const { t } = useTranslation();
   const constraints = Object.entries(project.constraints);
@@ -86,11 +89,17 @@ function ProjectCard({
           boxShadow: `inset 0 0 0 1px ${statusColor[project.status]}`,
           padding: '3px 6px 2px', whiteSpace: 'nowrap'
         }}>{t(`teamOs.projects.${project.status}`)}</span>
-        {project.status === 'ready' && (
-          <PixelButton variant="secondary" size="sm" disabled={!canPrepare} onClick={onPrepare}>
-            {t('teamOs.prepare.open')}
+        {project.status === 'ready' && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <PixelButton variant="secondary" size="sm" onClick={onInspectWorkspaces}>
+            {t('teamOs.flow.workspaces')}
           </PixelButton>
-        )}
+          <PixelButton variant="secondary" size="sm" onClick={onDiscuss}>
+            {t('teamOs.flow.discuss')}
+          </PixelButton>
+          <PixelButton variant="primary" size="sm" disabled={starting} onClick={onStart}>
+            {starting ? t('teamOs.flow.starting') : t('teamOs.flow.start')}
+          </PixelButton>
+        </div>}
       </div>
 
       {project.error && (
@@ -143,33 +152,119 @@ function PathFact({ label, value }: { label: string; value: string }) {
   );
 }
 
+function WorkspaceIndex({ snapshot, query, onQuery }: {
+  snapshot: TeamOsWorkspaceSnapshot;
+  query: string;
+  onQuery: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  const needle = query.trim().toLowerCase();
+  const workspaces = snapshot.workspaces.filter((workspace) => !needle || [
+    workspace.key, workspace.kind, workspace.path, workspace.group,
+  ].some((value) => value?.toLowerCase().includes(needle)));
+  return <section style={{ padding: 10, background: 'var(--cth-cream-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+      <div style={{ flex: 1, fontFamily: 'var(--cth-font-display)', fontSize: 9, color: 'var(--cth-ink-900)' }}>
+        {t('teamOs.flow.workspaceTitle', { project: snapshot.projectId })}
+      </div>
+      <input
+        value={query}
+        onChange={(event) => onQuery(event.target.value)}
+        placeholder={t('teamOs.flow.workspaceSearch')}
+        style={{ width: 220, border: 'none', outline: 'none', padding: '6px 8px', background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', fontSize: 11 }}
+      />
+    </div>
+    {!snapshot.ok && <div style={{ color: 'var(--cth-coral)', fontSize: 12 }}>{snapshot.error?.message}</div>}
+    {snapshot.ok && workspaces.length === 0 && <div style={{ color: 'var(--cth-ink-500)', fontSize: 12 }}>{t('teamOs.flow.noWorkspace')}</div>}
+    {workspaces.map((workspace) => <div key={workspace.key} style={{ display: 'grid', gridTemplateColumns: '150px 110px minmax(0, 1fr) 90px', gap: 8, padding: '6px 0', borderTop: '1px solid var(--cth-ink-100)', fontSize: 11 }}>
+      <span style={{ color: 'var(--cth-ink-900)' }}>{workspace.key}</span>
+      <span style={{ color: 'var(--cth-ink-500)' }}>{workspace.kind}</span>
+      <span title={workspace.path} style={{ color: 'var(--cth-ink-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{workspace.path}</span>
+      <span style={{ color: workspace.exists ? 'var(--cth-mint)' : 'var(--cth-coral)' }}>{t(`teamOs.flow.mode.${workspace.mode}`)}</span>
+    </div>)}
+  </section>;
+}
+
+function PlanStateCard({ state }: { state: TeamOsPlanningState }) {
+  const { t } = useTranslation();
+  const tasks = Object.values(state.tasks);
+  const done = tasks.filter((task) => task.status === 'done').length;
+  const active = tasks.filter((task) => task.status === 'doing').length;
+  return <div style={{ padding: 9, background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)', display: 'grid', gridTemplateColumns: '150px 110px minmax(0, 1fr)', gap: 8, alignItems: 'center' }}>
+    <div style={{ minWidth: 0 }}>
+      <div style={{ color: 'var(--cth-ink-900)', fontSize: 12 }}>{state.projectId}</div>
+      <div title={state.requestId} style={{ color: 'var(--cth-ink-500)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.requestId}</div>
+    </div>
+    <span style={{ color: ['failed', 'blocked'].includes(state.phase) ? 'var(--cth-coral)' : state.phase === 'completed' ? 'var(--cth-mint)' : 'var(--cth-sky)' }}>
+      {t(`teamOs.flow.phase.${state.phase}`)}
+    </span>
+    <div style={{ color: 'var(--cth-ink-500)', fontSize: 11 }}>
+      {t('teamOs.flow.taskSummary', { done, active, total: tasks.length })}
+      {state.error && <span style={{ color: 'var(--cth-coral)', marginLeft: 8 }}>{state.error.message}</span>}
+    </div>
+  </div>;
+}
+
 export function TeamOsProjectsPanel() {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<TeamOsSnapshot | null>(null);
-  const [catalog, setCatalog] = useState<TeamOsPreparationCatalog | null>(null);
+  const [planStates, setPlanStates] = useState<TeamOsPlanningState[]>([]);
+  const [workspaceSnapshot, setWorkspaceSnapshot] = useState<TeamOsWorkspaceSnapshot | null>(null);
+  const [workspaceQuery, setWorkspaceQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [preparingProjectId, setPreparingProjectId] = useState<string | null>(null);
+  const [startingProjectId, setStartingProjectId] = useState<string | null>(null);
+  const enqueueMessage = useStore((state) => state.enqueueMessage);
+  const requestDispatchSeed = useStore((state) => state.requestDispatchSeed);
+  const requestCommandCenterTab = useStore((state) => state.requestCommandCenterTab);
+  const michael = useStore((state) => state.agents.find((agent) => agent.isGod));
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
-      const [nextSnapshot, nextCatalog] = await Promise.all([
+      const [nextSnapshot, nextPlans] = await Promise.all([
         window.cth.teamOsSnapshot(),
-        window.cth.teamOsPreparationCatalog()
+        window.cth.teamOsPlanStates(),
       ]);
       setSnapshot(nextSnapshot);
-      setCatalog(nextCatalog);
-      setPreparingProjectId((current) => nextSnapshot.projects.some(
-        (project) => project.id === current && project.status === 'ready'
-      ) ? current : null);
+      setPlanStates(nextPlans);
     }
     catch (error) { setLoadError(error instanceof Error ? error.message : String(error)); }
     finally { setLoading(false); }
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => window.cth.onTeamOsPlanState(({ state }) => {
+    setPlanStates((current) => [state, ...current.filter((candidate) => candidate.requestId !== state.requestId)]);
+  }), []);
+
+  const discuss = (project: TeamOsProjectSnapshot) => {
+    requestDispatchSeed(t('teamOs.flow.discussPrompt', { project: project.name, id: project.id }));
+    requestCommandCenterTab('floor');
+  };
+
+  const start = async (project: TeamOsProjectSnapshot) => {
+    setStartingProjectId(project.id);
+    setLoadError('');
+    try {
+      if (!michael) throw new Error(t('teamOs.flow.noMichael'));
+      const result = await window.cth.teamOsStartFromConclusion(project.id);
+      if (!result.ok) throw new Error(result.error.message);
+      enqueueMessage(michael.id, result.prompt);
+      setPlanStates((current) => [result.state, ...current.filter((candidate) => candidate.requestId !== result.requestId)]);
+      requestCommandCenterTab('floor');
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setStartingProjectId(null);
+    }
+  };
+
+  const inspectWorkspaces = async (project: TeamOsProjectSnapshot) => {
+    setWorkspaceQuery('');
+    setWorkspaceSnapshot(await window.cth.teamOsWorkspaces(project.id));
+  };
 
   const sourceLabel = snapshot
     ? t(`teamOs.projects.source${snapshot.homeSource[0].toUpperCase()}${snapshot.homeSource.slice(1)}`)
@@ -225,20 +320,22 @@ export function TeamOsProjectsPanel() {
       {snapshot?.projects.map((project) => <ProjectCard
         key={project.id}
         project={project}
-        canPrepare={catalog?.status === 'ready'}
-        onPrepare={() => setPreparingProjectId(project.id)}
+        starting={startingProjectId === project.id}
+        onDiscuss={() => discuss(project)}
+        onStart={() => { void start(project); }}
+        onInspectWorkspaces={() => { void inspectWorkspaces(project); }}
       />)}
 
-      {catalog?.status === 'invalid' && (
-        <div style={{ color: 'var(--cth-coral)', background: 'var(--cth-coral-light)', padding: 8, fontSize: 12 }}>
-          {t('teamOs.prepare.catalogInvalid')}: {catalog.error?.message}
-        </div>
-      )}
+      {workspaceSnapshot && <WorkspaceIndex snapshot={workspaceSnapshot} query={workspaceQuery} onQuery={setWorkspaceQuery} />}
 
-      {preparingProjectId && catalog?.status === 'ready' && snapshot && (() => {
-        const project = snapshot.projects.find((candidate) => candidate.id === preparingProjectId);
-        return project ? <TeamOsWorkComposer project={project} catalog={catalog} onClose={() => setPreparingProjectId(null)} /> : null;
-      })()}
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 9, color: 'var(--cth-ink-900)' }}>
+          {t('teamOs.flow.planTitle')}
+        </div>
+        {planStates.length === 0
+          ? <div style={{ color: 'var(--cth-ink-500)', fontSize: 12 }}>{t('teamOs.flow.noPlans')}</div>
+          : planStates.slice(0, 20).map((state) => <PlanStateCard key={state.requestId} state={state} />)}
+      </section>
 
       <footer style={{ color: 'var(--cth-ink-500)', fontSize: 11, lineHeight: '16px', paddingBottom: 4 }}>
         <div>{t('teamOs.projects.noBodies')}</div>

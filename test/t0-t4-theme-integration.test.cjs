@@ -23,7 +23,9 @@ test('both built-in skins bind the same 15 ids to their themed portrait and scen
   assert.match(registry, /cast: themeCast\('starship'\)/);
   assert.match(registry, /cast: themeCast\('starfield-farm'\)/);
   assert.match(portrait, /officeTheme === 'starship' \|\| officeTheme === 'starfield-farm'/);
-  assert.match(portrait, /paintCastPortrait\(ctx, character, scale, characterTheme\)/);
+  assert.match(portrait, /variant === 'full-body' \? paintCastFullBody : paintCastPortrait/);
+  assert.match(portrait, /paint\(ctx, character, scale, characterTheme\)/);
+  assert.match(agentCard, /variant="full-body"/);
 });
 
 test('high-fidelity maps keep their paired Tiled navigation facts authoritative', () => {

@@ -332,6 +332,21 @@ export function tokenizeCommand(command: string): string[] {
   return out;
 }
 
+/** Recover old MAIN-provisioned worker records that persisted only a bare
+ * executable alongside a model. New records store the exact full command, but
+ * this one-time compatibility path prevents the first restart after upgrading
+ * from silently dropping the model and auto-mode flags. */
+export function restoreSpawnCommand(
+  config: Pick<HarnessConfig, 'defaultCommand' | 'autoMode'>,
+  savedCommand: string | undefined,
+  model: string | undefined,
+  provider: AgentProvider
+): string {
+  const saved = savedCommand?.trim() ?? '';
+  if (saved && (tokenizeCommand(saved).length > 1 || !model)) return saved;
+  return buildSpawnCommand(config, model, provider);
+}
+
 /** The model preset list for a given provider's picker. */
 export function modelsForProvider(provider: AgentProvider): ModelOption[] {
   if (provider === 'codex') return CODEX_MODELS;

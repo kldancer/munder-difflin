@@ -9,7 +9,11 @@
 import { Texture } from 'pixi.js';
 import { paintPortrait, sceneFrameBufs, SCENE_W, SCENE_H } from './portraitArt';
 import { themedPortraitBuf, themedSceneFrameBufs } from './themeCharacterArt';
-import { getThemeCharacterFrames, paintThemeCharacterPortrait } from './themeCharacterAssets';
+import {
+  getThemeCharacterFrames,
+  paintThemeCharacterFullBody,
+  paintThemeCharacterPortrait,
+} from './themeCharacterAssets';
 import type { CharacterThemeId } from './themedCast';
 export type { CharacterThemeId } from './themedCast';
 
@@ -118,4 +122,26 @@ export async function paintCastPortrait(
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, 18 * scale, 28 * scale);
   ctx.drawImage(canvas, 0, 0, 18, 28, 0, 0, 18 * scale, 28 * scale);
+}
+
+/** Paint a complete idle sprite for compact roster cards. The floor and card
+ * share this exact frame source; only the display scale differs. */
+export async function paintCastFullBody(
+  ctx: CanvasRenderingContext2D,
+  name: OfficeCharacterName,
+  scale = 1,
+  theme: CharacterThemeId = 'office',
+): Promise<void> {
+  if (theme !== 'office' && await paintThemeCharacterFullBody(ctx, name, scale, theme)) return;
+  const frame = sceneFrameBufs(name).front[0];
+  const canvas = document.createElement('canvas');
+  canvas.width = SCENE_W;
+  canvas.height = SCENE_H;
+  const stage = canvas.getContext('2d')!;
+  const image = stage.createImageData(SCENE_W, SCENE_H);
+  image.data.set(frame);
+  stage.putImageData(image, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, SCENE_W * scale, SCENE_H * scale);
+  ctx.drawImage(canvas, 0, 0, SCENE_W, SCENE_H, 0, 0, SCENE_W * scale, SCENE_H * scale);
 }

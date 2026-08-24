@@ -895,8 +895,21 @@ export function useHive(config: HarnessConfig | null): void {
     if (!config?.onboardingComplete) return;
     const offSpawn = window.cth.onHiveAgentSpawned?.((rec) => {
       if (!rec?.id) return;
-      // addAgent is idempotent, but bail early if the renderer already carded it.
-      if (useStore.getState().agents.some((a) => a.id === rec.id)) return;
+      // A MAIN-side fresh reuse keeps the durable role id but replaces the CLI
+      // process. Refresh its launch contract so model/command/cwd survive the next
+      // app restart instead of falling back to a provider default.
+      if (useStore.getState().agents.some((a) => a.id === rec.id)) {
+        useStore.getState().updateAgent(rec.id, {
+          cwd: rec.cwd,
+          project: (rec.cwd || '').split(/[\\/]/).filter(Boolean).pop() || 'hive',
+          ptyId: rec.id,
+          command: rec.command,
+          provider: rec.provider as Agent['provider'],
+          model: rec.model,
+          worktreePath: rec.worktreePath,
+        });
+        return;
+      }
       const key = (rec.name || rec.id).toLowerCase();
       const character =
         OFFICE_CAST.find((m) => m.name === key || m.displayName.toLowerCase() === key)?.name ??
@@ -920,6 +933,7 @@ export function useHive(config: HarnessConfig | null): void {
         ptyId: rec.id,
         command: rec.command,
         provider: rec.provider as Agent['provider'],
+        model: rec.model,
         isGod: false,
         recentTextTs: Date.now()
       };

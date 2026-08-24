@@ -27,11 +27,11 @@ import officeTilesetUrl from '@/assets/tilesets/office-tileset.png?url';
 import a5FloorsWallsUrl from '@/assets/tilesets/a5-office-floors-walls.png?url';
 import interiorsUrl from '@/assets/tilesets/interiors.png?url';
 import crystalSeaStarportMapUrl from '@/assets/themes/crystal-sea-starport/crystal-sea-starport-map-34x22.png?url';
-import starfieldFarmMapUrl from '@/assets/themes/starfield-farm/starfield-farm-map-34x22.png?url';
+import starfieldFarmMapUrl from '@/assets/themes/starfield-farm/starfield-farm-map-v2.png?url';
 // .tmj is Tiled JSON; imported as raw text and parsed by the loader.
 import officeMapRaw from '@/assets/maps/office.tmj?raw';
 import crystalSeaStarportMapRaw from '@/assets/maps/crystal-sea-starport.tmj?raw';
-import starfieldFarmMapRaw from '@/assets/maps/starfield-farm.tmj?raw';
+import starfieldFarmMapRaw from '@/assets/maps/starfield-farm-v2.tmj?raw';
 import brooklyn99MapRaw from '@/assets/maps/brooklyn99.tmj?raw';
 
 /** Theme identifiers. Built-in skins share one renderer and object contract;
@@ -161,6 +161,15 @@ export interface ThemeConfig {
   /** Optional full-map visual projected over this theme's Tiled layers. The
    * paired map remains authoritative for collision, seats and anchors. */
   backgroundUrl?: string;
+  /** Optional presentation switches for bitmap-authored scenes. Operational
+   * controls remain available in the right panel when embedded props are off. */
+  scene?: {
+    embeddedControls?: boolean;
+    runtimeBoards?: boolean;
+    /** Legacy office sprites hide their feet with a rectangular mask while
+     * seated. Bitmap-authored themes can disable it and keep full-body avatars. */
+    cropSeatedLegs?: boolean;
+  };
   /** Raw Tiled JSON text; parsed + tileset-patched by themeLoader. */
   mapRaw: string;
   /** Ordered atlases — order matches both the texture load order and the map's
@@ -266,6 +275,11 @@ export const STARSHIP_THEME: ThemeConfig = {
   id: 'starship',
   mapRaw: crystalSeaStarportMapRaw,
   backgroundUrl: crystalSeaStarportMapUrl,
+  scene: { embeddedControls: false, runtimeBoards: false, cropSeatedLegs: false },
+  // The bitmap-authored scene does not reuse the legacy office prop anchors.
+  // Normal desk/café routes remain active; only mismatched ambient errands are
+  // disabled until this map receives its own authored activity coordinates.
+  errandSpots: [],
   cast: themeCast('starship'),
   palette: {
     background: 0x050b1c,
@@ -313,6 +327,18 @@ export const STARFIELD_FARM_THEME: ThemeConfig = {
   id: 'starfield-farm',
   mapRaw: starfieldFarmMapRaw,
   backgroundUrl: starfieldFarmMapUrl,
+  scene: { embeddedControls: false, runtimeBoards: false, cropSeatedLegs: false },
+  coffee: {
+    trayTile: { x: 26, y: 4 },
+    trayStand: { x: 26, y: 5 },
+    machineStand: { x: 27, y: 5 },
+    sinkTile: { x: 25, y: 4 },
+    sinkStand: { x: 25, y: 5 },
+    maxCups: 4,
+  },
+  // Do not inherit the original office's plant/window/fridge coordinates.
+  // The v2 map's authored boss/staff activity points own idle movement.
+  errandSpots: [],
   cast: themeCast('starfield-farm'),
   palette: {
     background: 0x171b2b,

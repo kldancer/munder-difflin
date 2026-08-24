@@ -18,15 +18,19 @@ import type {
   TeamOsCompileFailure,
   TeamOsPreparationCatalog,
   TeamOsSnapshot,
+  TeamOsWorkspaceSnapshot,
   TeamOsWorkOrderRequest
 } from '../main/teamOs';
+import type { StartFromConclusionResult, TeamOsPlanningState } from '../main/teamOsPlanning';
 export type {
   TeamOsCompiledWorkOrder,
   TeamOsCompileFailure,
   TeamOsPreparationCatalog,
   TeamOsSnapshot,
+  TeamOsWorkspaceSnapshot,
   TeamOsWorkOrderRequest
 } from '../main/teamOs';
+export type { StartFromConclusionResult, TeamOsPlanningState } from '../main/teamOsPlanning';
 import type {
   ContextRule, ContextTriggerConfig, OrgTriggerConfig, TriggerHistoryEntry, WebhookTrigger
 } from '../shared/triggers';
@@ -818,6 +822,16 @@ const api = {
   /** TOS3: compact role/capability catalog plus a reviewable work-order compiler. */
   teamOsPreparationCatalog: (): Promise<TeamOsPreparationCatalog> =>
     ipcRenderer.invoke('teamOs:preparationCatalog'),
+  teamOsWorkspaces: (projectId: string, workspaceKey?: string): Promise<TeamOsWorkspaceSnapshot> =>
+    ipcRenderer.invoke('teamOs:workspaces', projectId, workspaceKey),
+  teamOsStartFromConclusion: (projectId?: string): Promise<StartFromConclusionResult> =>
+    ipcRenderer.invoke('teamOs:startFromConclusion', projectId),
+  teamOsPlanStates: (): Promise<TeamOsPlanningState[]> => ipcRenderer.invoke('teamOs:planStates'),
+  onTeamOsPlanState: (cb: (event: { requestId: string; phase: string; state: TeamOsPlanningState }) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, payload: { requestId: string; phase: string; state: TeamOsPlanningState }) => cb(payload);
+    ipcRenderer.on('teamOs:planState', listener);
+    return () => ipcRenderer.removeListener('teamOs:planState', listener);
+  },
   teamOsCompileWorkOrder: (request: TeamOsWorkOrderRequest): Promise<TeamOsCompiledWorkOrder | TeamOsCompileFailure> =>
     ipcRenderer.invoke('teamOs:compileWorkOrder', request),
 
@@ -957,7 +971,7 @@ const api = {
   onHiveAgentSpawned: (
     cb: (rec: {
       id: string; name: string; provider?: string; cwd: string;
-      command?: string; role?: string; worktreePath?: string;
+      command?: string; model?: string; role?: string; worktreePath?: string;
     }) => void
   ): (() => void) => {
     const listener = (_e: IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);

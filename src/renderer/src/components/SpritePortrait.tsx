@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { paintCastPortrait, type OfficeCharacterName } from '@/scene/office/cast';
+import { paintCastFullBody, paintCastPortrait, type OfficeCharacterName } from '@/scene/office/cast';
 import { PORTRAIT_W, PORTRAIT_H } from '@/scene/office/portraitArt';
 import { useStore } from '@/store/store';
 
@@ -13,13 +13,15 @@ export interface SpritePortraitProps {
    *  smoothing off, so nothing here is ever interpolated. */
   scale?: number;
   background?: string;
+  variant?: 'portrait' | 'full-body';
 }
 
 /** Static portrait compiled from the same stable identity source as the floor sprite. */
 export function SpritePortrait({
   character,
   scale = 2,
-  background = 'transparent'
+  background = 'transparent',
+  variant = 'portrait',
 }: SpritePortraitProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const officeTheme = useStore((s) => s.officeTheme);
@@ -39,16 +41,19 @@ export function SpritePortrait({
       ctx.fillStyle = background;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
-    paintCastPortrait(ctx, character, scale, characterTheme).catch(() => { /* asset load race */ });
+    const paint = variant === 'full-body' ? paintCastFullBody : paintCastPortrait;
+    paint(ctx, character, scale, characterTheme).catch(() => { /* asset load race */ });
     return () => { cancelled = true; void cancelled; };
-  }, [character, scale, background, characterTheme]);
+  }, [character, scale, background, characterTheme, variant]);
 
   // A fractional scale can land on a fractional pixel count; the canvas
   // attributes are integers either way, so round once and use the same number
   // for the backing store and the CSS box (a mismatch is what makes pixel art
   // blurry).
-  const w = Math.round(FRAME_W * scale);
-  const h = Math.round(FRAME_H * scale);
+  const sourceW = variant === 'full-body' ? 18 : FRAME_W;
+  const sourceH = variant === 'full-body' ? 32 : FRAME_H;
+  const w = Math.round(sourceW * scale);
+  const h = Math.round(sourceH * scale);
 
   return (
     <canvas

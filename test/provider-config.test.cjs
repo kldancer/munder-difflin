@@ -13,11 +13,24 @@ const {
 } = loadTs('src/shared/agentProvider.ts');
 const {
   buildSpawnCommand,
+  restoreSpawnCommand,
   decodeProviderModel,
   encodeProviderModel,
   modelProvidersForAgent,
   modelsForProvider
 } = loadTs('src/renderer/src/store/config.ts');
+
+test('restore upgrades a legacy bare Team OS command using its durable model', () => {
+  const cfg = { defaultCommand: 'claude', autoMode: true };
+  assert.equal(
+    restoreSpawnCommand(cfg, 'codex', 'gpt-5.6-luna', 'codex'),
+    'codex --model gpt-5.6-luna --dangerously-bypass-approvals-and-sandbox'
+  );
+  assert.equal(
+    restoreSpawnCommand(cfg, 'codex --model gpt-5.6-sol', 'gpt-5.6-luna', 'codex'),
+    'codex --model gpt-5.6-sol'
+  );
+});
 
 const autoConfig = { defaultCommand: 'claude', autoMode: true };
 

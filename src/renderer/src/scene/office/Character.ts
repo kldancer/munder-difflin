@@ -66,6 +66,13 @@ interface CharacterOptions {
   seatTile: { x: number; y: number };
   /** Where the avatar first appears (the office door). Defaults to seatTile. */
   spawnTile?: { x: number; y: number };
+  /** Named, map-authored idle destinations. When supplied, the avatar never
+   * invents a random destination that may belong to another functional zone. */
+  wanderTargets?: ReadonlyArray<{ x: number; y: number }>;
+  idleLingerSeconds?: number;
+  deskRestSeconds?: number;
+  /** Full-scene themes disable the legacy rectangular seated-leg mask. */
+  cropSeatedLegs?: boolean;
   glowColor: number;
   /** Direction faced while seated. Default 'down' so the face is toward the user. */
   seatDirection?: Direction;
@@ -103,6 +110,10 @@ export class Character {
   private isTileOccupied?: CharacterOptions['isTileOccupied'];
   private isFootprintBlocked?: CharacterOptions['isFootprintBlocked'];
   private collisionWait = 0;
+  private wanderTargets: ReadonlyArray<{ x: number; y: number }>;
+  private idleLingerSeconds: number;
+  private deskRestSeconds: number;
+  private cropSeatedLegs: boolean;
 
   public isVisible = false;
   private fadeDirection: 'in' | 'out' | null = null;
@@ -148,6 +159,10 @@ export class Character {
     this.isTileOccupied = options.isTileOccupied;
     this.isFootprintBlocked = options.isFootprintBlocked;
     this.onClick = options.onClick;
+    this.wanderTargets = options.wanderTargets ?? [];
+    this.idleLingerSeconds = options.idleLingerSeconds ?? IDLE_LINGER_SECONDS;
+    this.deskRestSeconds = options.deskRestSeconds ?? DESK_REST_SECONDS;
+    this.cropSeatedLegs = options.cropSeatedLegs ?? true;
 
     // Appear at the spawn tile (the door) and walk in from there.
     const start = options.spawnTile ?? this.deskTile;
@@ -269,7 +284,9 @@ export class Character {
       case 'right': dx = SIT_OFFSET; dy = SIT_OFFSET_SIDE; break;
     }
     this.sprite.setPosition(this.px + dx, this.py + dy);
-    this.sprite.setSeatedCrop(dir === 'down' ? SEAT_LEG_CROP : SEAT_BACK_CROP);
+    this.sprite.setSeatedCrop(
+      this.cropSeatedLegs ? (dir === 'down' ? SEAT_LEG_CROP : SEAT_BACK_CROP) : 0,
+    );
   }
 
   /** Sit on a café seat at the CURRENT tile, facing `dir`. The agent must have
@@ -829,7 +846,9 @@ export class Character {
     const step = Math.min(SPEED * dt, dist);
     const nextPx = this.px + (dx / dist) * step;
     const nextPy = this.py + (dy / dist) * step;
-    const staticBlocked = !this.mapRenderer.isFootprintWalkable(
+    const staticBlocked = !this.mapRenderer.isFootprintPathWalkable(
+      this.px,
+      this.py,
       nextPx,
       nextPy,
       CHARACTER_FOOTPRINT_RADIUS,
@@ -869,7 +888,7 @@ export class Character {
       case 'linger':
         // Roaming (beginWander) handles the motion; we just time the phase.
         this.idleLoopTimer += dt;
-        if (this.idleLoopTimer >= IDLE_LINGER_SECONDS) {
+        if (this.idleLoopTimer >= this.idleLingerSeconds) {
           this.idleLoopPhase = 'toDesk';
           this.idleLoopTimer = 0;
           this.walkToDeskAndSit(false); // head home and sit (no focus halo)
@@ -890,7 +909,7 @@ export class Character {
         break;
       case 'resting':
         this.idleLoopTimer += dt;
-        if (this.idleLoopTimer >= DESK_REST_SECONDS) {
+        if (this.idleLoopTimer >= this.deskRestSeconds) {
           this.idleLoopPhase = 'linger';
           this.idleLoopTimer = 0;
           this.beginWander(); // stand up and roam again
@@ -904,8 +923,22 @@ export class Character {
     if (this.idleTimer < this.idleWanderDelay) return;
     this.idleTimer = 0;
     this.idleWanderDelay = 1 + Math.random() * 3;
-    // Pick a nearby walkable tile and stroll to it.
+    // Prefer map-authored role destinations. This turns idle movement into a
+    // legible patrol between real work areas instead of unconstrained jitter.
     const cur = this.getTilePosition();
+    if (this.wanderTargets.length > 0) {
+      const candidates = this.wanderTargets.filter((point) =>
+        (point.x !== cur.x || point.y !== cur.y) && this.mapRenderer.isWalkable(point.x, point.y));
+      for (let attempt = 0; attempt < candidates.length; attempt++) {
+        const target = candidates[Math.floor(Math.random() * candidates.length)];
+        const wasWandering = this.wandering;
+        this.moveTo(target);
+        this.wandering = wasWandering;
+        if (this.state === 'walk') return;
+      }
+      return;
+    }
+    // Legacy maps without activity-points retain the bounded nearby fallback.
     const range = 6;
     for (let attempt = 0; attempt < 14; attempt++) {
       const tx = cur.x + Math.floor(Math.random() * range * 2) - range;

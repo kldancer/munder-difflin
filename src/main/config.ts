@@ -214,6 +214,9 @@ export interface HarnessConfig {
   /** One-time guard: has the built-in hourly ops standup been seeded into an
    *  existing install's missions? Prevents re-adding it after a user deletes it. */
   opsStandupSeeded?: boolean;
+  /** Last semantic task/roster fingerprint observed by the hourly standup.
+   *  Machine-only: lets an unchanged quiet floor skip the model wake entirely. */
+  opsStandupFingerprint?: string;
   /** One-time guard for the built-in heartbeat mission (mirrors opsStandupSeeded
    *  so a user who deletes the heartbeat doesn't get it re-added every boot). */
   heartbeatSeeded?: boolean;
