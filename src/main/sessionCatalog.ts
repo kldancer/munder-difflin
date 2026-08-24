@@ -18,7 +18,7 @@ export interface SessionCatalogRecord {
   agentName: string | null;
   cwd: string | null;
   updatedAt: number;
-  source: 'registry' | 'claude' | 'codex' | 'gemini' | 'deepseek';
+  source: 'registry' | 'claude' | 'codex' | 'codex-native' | 'gemini' | 'deepseek';
   resumable: boolean;
   limitation?: string;
 }

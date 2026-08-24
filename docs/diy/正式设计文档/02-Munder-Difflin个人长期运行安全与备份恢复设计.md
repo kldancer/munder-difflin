@@ -9,6 +9,7 @@
 | 领域 | 长期合同 | 明确不做 |
 | --- | --- | --- |
 | 运行时 | 仓库声明 Node 22；Electron 与原生模块按 Electron ABI 构建并一起验证 | 用普通 Node 直接加载 Electron ABI 原生模块 |
+| Codex 原生桥 | 每 Agent 一个本地 stdio App Server；精确 writable roots；结构化审批；有界崩溃恢复；可按 Agent 退回 PTY | 远端监听、共享活动 Thread、静默重投或原生默认宽泛 bypass |
 | 依赖 | lockfile v3 是唯一安装输入；漏洞扫描只产生风险清单，升级必须经过兼容验证 | `npm audit fix --force`、无验证跨大版本升级 |
 | 外部入口 | Slack、Webhook、Tunnel 默认关闭；启用的本地转发目标只监听 `127.0.0.1` | 把 Token 放进 URL、日志、文档或收据 |
 | Skills | 安装前确认；来源解析到固定 Git commit；记录内容 SHA-256；可卸载 | 隐式运行远程安装脚本、失败后静默换源 |
@@ -52,6 +53,8 @@ flowchart LR
 开发命令使用 Node 22，版本范围由 `package.json#engines` 和 `.nvmrc` 共同约束。`postinstall` 会针对 Electron 重建 `better-sqlite3` 与 `node-pty`；因此正确验收入口是 Electron ABI，而不是在普通 Node 进程中 `require` 这些 `.node` 文件。
 
 维护检查至少覆盖：Node 主版本、lockfile 版本、`npm ls` 依赖闭合、Electron 版本/ABI、SQLite 内存查询、PTY 导出、类型检查、生产构建和只读 `npm audit`。发现漏洞后按直接运行依赖、开发/打包依赖、未启用可选入口分类，升级时使用独立分支并重跑同一反馈环。
+
+Codex 原生模式由 Main 监管 `codex app-server --stdio` 子进程。应用退出时有界停止全部子进程；系统唤醒后对每个 live Thread 做只读恢复检查；单 Agent 进程异常只允许一次受控重启并优先 `thread/resume/read`，存在无法判定是否已接受的 Turn 时标记为不确定，不自动再发。原生日常路径使用 `approvalPolicy=on-request`、`workspace-write` 和项目/worktree + 自身 Agent Hive 的精确 writable roots，不携带 `--dangerously-bypass-approvals-and-sandbox`。
 
 ### 2.2 外部入口
 
@@ -99,15 +102,15 @@ Munder 安装的 Skill 随目录保存 `.munder-skill-lock.json`，包含目录�
 | `user-data/config.json` | Electron userData | 脱敏后的语言、Provider 选择、路径与非敏感设置 |
 | `user-data/harness.db*` | Electron userData | 任务历史数据库及适用 WAL/SHM |
 | `user-data/knowledge/` | Electron userData | 知识库 |
-| `harness/hive/` | `harnessHome` | 协议、角色 Home、Session、消息、任务、记忆与蜂巢 Git |
+| `harness/hive/` | `harnessHome` | 协议、角色 Home、Thread/Session 恢复索引、消息、任务、记忆与蜂巢 Git |
 | `harness/roster*.json`、`roster-backups/` | `harnessHome` | UI 团队镜像和可回溯副本 |
 | `harness/worktrees/` | `harnessHome` | 未集成文件的恢复副本 |
 
-备份排除 `integration-secrets.json`、Provider `auth.json`/credential/account 文件、API Key 文件、socket、PID/lock、符号链接、缓存、临时目录和 `node_modules`。Worktree 的 `.git` 指针也排除，因为它记录旧机器绝对路径；恢复内容只是救援副本，必须在目标仓库重新创建 Worktree/分支后人工合并。
+备份排除 `integration-secrets.json`、Provider `auth.json`/credential/account 文件、API Key 文件、socket、PID/lock、符号链接、`hive/cache/`、其它 Provider cache、临时目录和 `node_modules`。每 Agent `runtime.json` 只含有界 ID/状态/投递索引，可以随 Hive 备份；它不含 Prompt/Transcript，恢复后仍必须通过 Provider 原生 read/resume 对账。Worktree 的 `.git` 指针也排除，因为它记录旧机器绝对路径；恢复内容只是救援副本，必须在目标仓库重新创建 Worktree/分支后人工合并。
 
 ### 4.2 一致性前提
 
-创建快照前退出 Munder Difflin，并确认没有 Agent CLI 或维护中的 Worktree 写入。这样 SQLite 主文件、WAL/SHM、Hive 日志和 Session 才属于同一静止时点。工具不会为了备份强杀进程，也不会自行删除会话或工作树。
+创建快照前退出 Munder Difflin，并确认没有 App Server、Agent CLI 或维护中的 Worktree 写入。这样每 Agent SQLite/WAL、Hive 日志、`runtime.json` 和 Session 才属于同一静止时点。工具不会为了备份强杀进程，也不会自行删除会话或工作树。
 
 ### 4.3 推荐本机布局与双运行形态
 
@@ -160,7 +163,7 @@ Team OS 使用自己的私有 Git 历史和独立备份策略。当前 Harness �
 | --- | --- | --- |
 | 日常工作 | `office/` | 使用已安装的 `.app`；保持为唯一写入者 |
 | UI、样式、纯文案验证 | 可临时使用 `office/` | 必须先完全退出已安装版；验证后退出开发版再恢复日常应用 |
-| Provider、Hive、角色模板、Session、任务或迁移开发 | `office-dev/` | 不直接在稳定办公室试错；先用代表性测试数据闭合 |
+| Provider、App Server/PTY、Hive、角色模板、Thread/Session、任务或迁移开发 | `office-dev/` | 不直接在稳定办公室试错；先用代表性测试数据闭合 |
 | 新版本切换 | 先备份 `office/`，再由新 `.app` 使用原 `office/` | 快照必须先 `verify`；发现不兼容时恢复到新的空目录，不覆盖原目录 |
 | 旧版本回退 | 从对应快照恢复到另一组空目录 | 不让旧版本直接写入已被新版本迁移的稳定办公室 |
 
@@ -170,7 +173,7 @@ Team OS 使用自己的私有 Git 历史和独立备份策略。当前 Harness �
 
 ### 4.4 容量报告与治理边界
 
-Command Center 提供 Session、Inbox/Outbox 待处理与归档、活动日志、成本账本、`memory.md` 和 Worktree 的文件数与字节数报告。扫描仅使用目录项和文件元数据，跳过符号链接，并受目录数、文件数、深度和累计字节预算约束；达到任一上限时显式标记结果不完整。报告由用户进入活动页或点击刷新触发，不作为后台守护进程运行。
+Command Center 提供 Thread/Session、Inbox/Outbox 待处理与归档、活动日志、成本账本、`memory.md` 和 Worktree 的文件数与字节数报告。扫描仅使用目录项和文件元数据，跳过符号链接，并受目录数、文件数、深度和累计字节预算约束；达到任一上限时显式标记结果不完整。`hive/cache/codex/` 是全办公室共享、可再生且被 Git/备份排除的公共插件目录，不计作某个角色的记忆或 Session。报告由用户进入活动页或点击刷新触发，不作为后台守护进程运行。
 
 容量报告不读取正文、不复制 Transcript、不输出凭据路径，也不提供自动删除、定时清理或保留规则 DSL。默认策略是保留；确需治理时，先退出应用、按第 4～5 节创建并验证脱敏快照，再由用户明确选择归档或移除目标。Worktree 仍必须先通过 Git 集成与干净性检查，不能因为容量较大而跳过交付门禁。
 
@@ -222,4 +225,5 @@ node tools/w5-backup.cjs restore \
 | 外部入口 | 默认关闭；已启用入口满足回环监听、鉴权、限流、body cap、replay/轮换和停止合同 |
 | Skills | 安装需确认；commit 与内容哈希可见；项目覆盖成立；卸载受目录保护；刷新不静默换源 |
 | 备份 | 配置已脱敏、认证文件排除、manifest 校验能发现篡改、恢复拒绝覆盖、恢复后路径指向新办公室 |
-| G5 | 中文 Codex/Gemini/DeepSeek 主链仍通过，并完成一次 CLI 级创建、验证、空目录恢复和恢复后复验 |
+| Provider Runtime | Codex native 的 Thread/Turn/审批/恢复/单 Agent PTY fallback 闭合；Gemini/DeepSeek PTY/Hook 无回归；5～6 Agent 资源与 IO 可接受 |
+| 端到端恢复 | 中文 Codex/Gemini/DeepSeek 主链保持可用，并覆盖一次 CLI 级创建、验证、空目录恢复和恢复后复验 |

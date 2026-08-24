@@ -8,7 +8,7 @@ import { PtyTerminalView } from './PtyTerminalView';
 import { terminalInstanceKey } from './terminalRecovery';
 import { MessageQueueComposer } from './MessageQueueComposer';
 import { CommandCenterPanel } from './CommandCenterPanel';
-import { disposeTerminal } from './terminalPool';
+import { disposeTerminal, resetTerminal } from './terminalPool';
 import { SidebarTabs } from './SidebarTabs';
 import { ThreadsPanel } from './ThreadsPanel';
 import { ToolWaterfall } from './ToolWaterfall';
@@ -110,6 +110,7 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
       if (!result.ok) throw new Error(result.error ?? t('w6.session.resumeFailed'));
       updateAgent(agent.id, {
         ptyId, terminalGeneration: (agent.terminalGeneration ?? 0) + 1,
+        runtimeMode: result.runtimeMode ?? 'pty',
         status: 'idle', action: t('w6.session.action', { id: sid.slice(0, 12) })
       });
       setSessionOutcome('success');
@@ -153,6 +154,18 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
     archiveAgent(agent.id);
   };
 
+  const fallbackToPty = async () => {
+    if (agent.runtimeMode !== 'codex-native') return;
+    if (!confirm('切换到 Codex PTY 兼容模式？当前原生回合会先停止，会话文件会保留。')) return;
+    const result = await window.cth.runtimeFallback(agent.id);
+    if (!result.ok) { setOpenTerminalError(result.error ?? 'fallback failed'); return; }
+    if (agent.ptyId) resetTerminal(agent.ptyId);
+    updateAgent(agent.id, {
+      runtimeMode: 'pty', runtimeStatus: undefined, runtimeTurnId: undefined,
+      runtimeApproval: undefined, status: 'idle', action: 'PTY compatibility'
+    });
+  };
+
   return (
     <PixelPanel
       variant="default"
@@ -193,6 +206,7 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
             display: 'flex', gap: 6, alignItems: 'center', marginTop: 1
           }}>
             <PixelBadge status={agent.status} />
+            {agent.runtimeMode === 'codex-native' && <span title={(agent.runtimeInstructionSources ?? []).join('\n')} style={{ fontSize: 10, color: 'var(--cth-ink-500)' }}>CODEX NATIVE</span>}
             <span style={{
               fontSize: 12, color: 'var(--cth-ink-500)',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
@@ -212,6 +226,9 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
             {openTerminalState === 'opening' ? '...' : openTerminalState === 'ok' ? 'ok' : openTerminalState === 'error' ? 'err' : 'open'}
           </span>
         </PixelButton>
+        {agent.runtimeMode === 'codex-native' && (
+          <PixelButton variant="secondary" size="sm" onClick={() => void fallbackToPty()}>PTY 回退</PixelButton>
+        )}
         {isReal && (
           <PixelButton variant="destructive" size="sm" onClick={onKill}>
             <Icon name="x" />
@@ -226,6 +243,18 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
           background: 'var(--cth-coral-light)',
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
         }}>{openTerminalError}</div>
+      )}
+
+      {agent.runtimeMode === 'codex-native' && agent.runtimeLastError && (
+        <div style={{
+          fontSize: 11, color: 'var(--cth-coral)', padding: '4px 8px',
+          background: 'var(--cth-coral-light)', borderBottom: '1px solid var(--cth-ink-300)'
+        }}>
+          {agent.runtimeLastError}
+          {(agent.runtimeUncertainDeliveries?.length ?? 0) > 0
+            ? `（${agent.runtimeUncertainDeliveries!.length} 条投递待核对）`
+            : ''}
+        </div>
       )}
 
       {recentSessions.length > 0 && (

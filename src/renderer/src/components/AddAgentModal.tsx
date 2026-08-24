@@ -437,6 +437,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
       progress: 0,
       currentStation: 'desk',
       ptyId,
+      runtimeMode: spawnRes.runtimeMode ?? 'pty',
       command: command.trim(),
       provider,
       model,

@@ -170,6 +170,20 @@ test('every hook installer routes through the launcher — none left on bare nod
 
   const agentIgnore = fs.readFileSync(path.join(home, 'hive/agents/a1/.gitignore'), 'utf8');
   assert.match(agentIgnore, /^\.codex\/$/m, 'per-agent Codex credentials/runtime must stay out of hive git');
+  assert.match(agentIgnore, /^runtime\.json$/m, 'native Thread/Turn recovery churn must stay out of hive git and memory mining');
+
+  // A pre-migration Hive may already track runtime.json. The app must preserve
+  // the recovery file while removing it from the internal Git index.
+  const runtimeIndex = path.join(home, 'hive/agents/a1/runtime.json');
+  fs.writeFileSync(runtimeIndex, '{"version":1}\n');
+  execFileSync('git', ['add', '-f', 'agents/a1/runtime.json'], { cwd: path.join(home, 'hive') });
+  execFileSync('git', ['commit', '-q', '-m', 'legacy runtime index'], { cwd: path.join(home, 'hive') });
+  hive.ensureHive();
+  hive.commit('migrate runtime index');
+  assert.equal(fs.existsSync(runtimeIndex), true, 'migration must not delete the recovery file');
+  assert.equal(execFileSync('git', ['ls-files', 'agents/a1/runtime.json'], {
+    cwd: path.join(home, 'hive'), encoding: 'utf8'
+  }).trim(), '');
 
   // agy and grok install into the USER's home. Redirect it, and refuse to run
   // rather than write into the developer's real ~/.gemini / ~/.grok.
@@ -200,7 +214,21 @@ test('every hook installer routes through the launcher — none left on bare nod
   hive.installAgyHooks();
   hive.installGrokHooks();
   const agentDir = path.join(home, 'hive/agents/a1');
-  const codexHome = hive.installCodexHooks(agentDir, project, true);
+  const codexMeta = { id: 'a1', name: 'A', provider: 'codex', cwd: project, replyLanguage: 'zh-CN' };
+  const codexHome = hive.installCodexHooks(agentDir, codexMeta, path.join(home, 'hive'), project, true);
+
+  const sharedCatalog = path.join(home, 'hive/cache/codex/remote_plugin_catalog');
+  const agentCatalog = path.join(codexHome, 'cache/remote_plugin_catalog');
+  assert.equal(fs.lstatSync(agentCatalog).isSymbolicLink(), POSIX,
+    'POSIX agents should link the public catalog instead of duplicating it');
+  assert.equal(fs.realpathSync(agentCatalog), fs.realpathSync(sharedCatalog));
+  const sharedPluginCache = path.join(home, 'hive/cache/codex/plugins');
+  const agentPluginCache = path.join(codexHome, 'plugins/cache');
+  assert.equal(fs.lstatSync(agentPluginCache).isSymbolicLink(), POSIX,
+    'POSIX agents should link immutable plugin payloads instead of duplicating them');
+  assert.equal(fs.realpathSync(agentPluginCache), fs.realpathSync(sharedPluginCache));
+  assert.match(fs.readFileSync(path.join(home, 'hive/.gitignore'), 'utf8'), /^cache\/$/m,
+    'shared runtime cache must stay out of Hive git');
 
   const codexConfig = fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8');
   assert.doesNotThrow(() => toml.parse(codexConfig), 'generated Codex config must remain valid TOML');
@@ -228,7 +256,7 @@ test('every hook installer routes through the launcher — none left on bare nod
     'trust_level = "trusted"',
     ''
   ].join('\n'));
-  hive.installCodexHooks(agentDir, project, false);
+  hive.installCodexHooks(agentDir, codexMeta, path.join(home, 'hive'), project, false);
   const regenerated = fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8');
   assert.match(regenerated, /manual-trust/);
   assert.equal((regenerated.match(/\[\[hooks\.PreToolUse\]\]/g) ?? []).length, 1);

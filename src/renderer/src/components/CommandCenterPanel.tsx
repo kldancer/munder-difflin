@@ -148,6 +148,17 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
     const all = useStore.getState().agents;
     await Promise.all(all.map((a) => window.cth.controlAutoDelivery(a.id, next).catch(() => null)));
   };
+  const fallbackGodToPty = async () => {
+    if (agent.runtimeMode !== 'codex-native') return;
+    if (!window.confirm('将 Michael 切换到 Codex PTY 兼容模式？当前原生回合会先停止，会话文件会保留。')) return;
+    const result = await window.cth.runtimeFallback(agent.id);
+    if (!result.ok) return;
+    if (agent.ptyId) resetTerminal(agent.ptyId);
+    updateAgent(agent.id, {
+      runtimeMode: 'pty', runtimeStatus: undefined, runtimeTurnId: undefined,
+      runtimeApproval: undefined, status: 'idle', action: 'PTY compatibility'
+    });
+  };
 
   return (
     <PixelPanel
@@ -180,6 +191,7 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
           }}>{tr('commandCenter.title')}</div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 1, minWidth: 0 }}>
             <PixelBadge status={agent.status} />
+            {agent.runtimeMode === 'codex-native' && <span title={(agent.runtimeInstructionSources ?? []).join('\n')} style={{ fontSize: 10, color: 'var(--cth-ink-500)', flexShrink: 0 }}>CODEX NATIVE</span>}
             <span style={{
               fontSize: 12, color: 'var(--cth-ink-500)',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
@@ -216,8 +228,23 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
               <Icon name="code" /> {tr('commandCenter.ide')}
             </span>
           </PixelButton>
+          {agent.runtimeMode === 'codex-native' && (
+            <PixelButton variant="secondary" size="sm" onClick={() => void fallbackGodToPty()}>PTY 回退</PixelButton>
+          )}
         </div>
       </div>
+
+      {agent.runtimeMode === 'codex-native' && agent.runtimeLastError && (
+        <div style={{
+          fontSize: 11, color: 'var(--cth-coral)', padding: '4px 8px',
+          background: 'var(--cth-coral-light)', borderBottom: '1px solid var(--cth-skin-border)'
+        }}>
+          {agent.runtimeLastError}
+          {(agent.runtimeUncertainDeliveries?.length ?? 0) > 0
+            ? `（${agent.runtimeUncertainDeliveries!.length} 条投递待核对）`
+            : ''}
+        </div>
+      )}
 
       {/* Tab bar — ONE row, tabs at their natural width, scrolling only if the
           panel is genuinely too narrow for all of them.
@@ -515,6 +542,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
               command: command.trim(),
               provider,
               model,
+              runtimeMode: res.runtimeMode ?? 'pty',
               status: 'idle' as const,
               action: 'continuing…'
             }
@@ -522,6 +550,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
               command: command.trim(),
               provider,
               model,
+              runtimeMode: res.runtimeMode ?? 'pty',
               status: 'idle' as const,
               action: provider === previousProvider ? tr('extra.restarting') : tr('residual.switching', { provider: providerPreset(provider).label })
             };

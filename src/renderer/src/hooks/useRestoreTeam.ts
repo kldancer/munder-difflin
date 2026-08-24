@@ -156,6 +156,7 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
                 ...a,
                 provider,
                 ptyId,
+                runtimeMode: res.runtimeMode ?? 'pty',
                 archived: false,
                 status: 'idle',
                 // Surface the worktree fallback on the floor card; otherwise normal.

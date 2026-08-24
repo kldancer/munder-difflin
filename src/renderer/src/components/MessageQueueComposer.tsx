@@ -144,9 +144,20 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
           setPlanStartError(result.error.message);
           return;
         }
-        // This prompt enters Michael's existing queue and therefore the same
-        // CLI Session that holds the discussion. Main creates no second model.
-        enqueueMessage(agent.id, result.prompt);
+        // Native Codex constrains the planning Turn with outputSchema; Main
+        // atomically stores and validates that result. PTY compatibility keeps
+        // the established submit.json path. Both remain in Michael's same Session.
+        if (agent.runtimeMode === 'codex-native') {
+          const submitted = await window.cth.runtimeSubmit(
+            agent.id,
+            result.nativePrompt,
+            `team-os-plan:${result.requestId}`,
+            { outputSchema: result.outputSchema }
+          );
+          if (!submitted.ok) throw new Error(submitted.error ?? '原生规划回合未被接收');
+        } else {
+          enqueueMessage(agent.id, result.prompt);
+        }
         setText('');
         setAttachments([]);
       } catch (error) {
@@ -179,7 +190,10 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
   // Delivery can be held back by the agent's own terminal (a half-typed draft or
   // an open slash-command picker owns the prompt). That used to be invisible —
   // the hint claimed it was sending while nothing moved — so poll it and say so.
-  const block = useTerminalBlock(agent.ptyId, queue.length > 0 && idle);
+  const block = useTerminalBlock(
+    agent.runtimeMode === 'codex-native' ? undefined : agent.ptyId,
+    queue.length > 0 && idle
+  );
 
   // Floor-wide auto-delivery pause (Command Center switch) also holds the queue.
   // Without saying so — and without the per-row "send now" override — messages

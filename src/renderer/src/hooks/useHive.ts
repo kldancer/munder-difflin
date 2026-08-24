@@ -366,6 +366,7 @@ export function useHive(config: HarnessConfig | null): void {
         progress: 0,
         currentStation: 'desk',
         ptyId: GOD_PTY,
+        runtimeMode: res.runtimeMode ?? 'pty',
         command: command.trim(),
         provider: godProvider,
         model: godModel,
@@ -374,6 +375,22 @@ export function useHive(config: HarnessConfig | null): void {
       };
       useStore.getState().addAgent(god);
       useStore.getState().setGodStatus('ready');
+      if (res.runtimeMode === 'codex-native') {
+        void window.cth.runtimeSnapshot(GOD_ID).then((snapshot) => {
+          if (!snapshot) return;
+          useStore.getState().updateAgent(GOD_ID, {
+            runtimeMode: snapshot.mode,
+            runtimeStatus: snapshot.status,
+            runtimeThreadId: snapshot.threadId,
+            runtimeSessionId: snapshot.sessionId,
+            runtimeTurnId: snapshot.turnId,
+            runtimeInstructionSources: snapshot.instructionSources,
+            runtimeUsage: snapshot.usage,
+            runtimeUncertainDeliveries: snapshot.uncertainDeliveries,
+            runtimeLastError: snapshot.lastError
+          });
+        });
+      }
 
       // Kick Michael off once his TUI is up. Always re-enable remote control so
       // the human can approve permission prompts from their phone (best-effort — a
@@ -388,6 +405,12 @@ export function useHive(config: HarnessConfig | null): void {
       bootGraceUntil.current[GOD_ID] = Date.now() + BOOT_GRACE_MS;
       void (async () => {
         try {
+          if (res.runtimeMode === 'codex-native') {
+            if (!cancelled && !resumedGod) {
+              await window.cth.runtimeSubmit(GOD_ID, INITIAL_GOD_PROMPT, 'bootstrap-god-v1');
+            }
+            return;
+          }
           const remoteCommand = remoteControlCommandForProvider(godProvider, 'Michael');
           if (remoteCommand) {
             // settleMs pauses the chain ~1.5s after /remote-control before the
@@ -408,6 +431,66 @@ export function useHive(config: HarnessConfig | null): void {
     return () => { cancelled = true; clearTimeout(t); };
   }, [config?.onboardingComplete, config?.harnessHome]);
 
+  // Codex native state is authoritative: no terminal-text or Hook inference.
+  useEffect(() => window.cth.onRuntimeEvent(({ agentId, event }) => {
+    const { agents, updateAgent } = useStore.getState();
+    const agent = agents.find((candidate) => candidate.id === agentId);
+    if (!agent) return;
+    const common = { runtimeMode: 'codex-native' as const };
+    if (event.type === 'runtime-status') {
+      const status = event.status === 'idle' || event.status === 'completed'
+        ? 'idle'
+        : event.status === 'running' || event.status === 'booting'
+          ? 'working'
+          : event.status === 'awaiting-approval' || event.status === 'blocked'
+            ? (agent.isGod ? 'blocked' : 'waiting')
+            : 'ghost';
+      updateAgent(agentId, {
+        ...common,
+        runtimeStatus: event.status,
+        runtimeLastError: event.status === 'failed' || event.status === 'blocked' || event.status === 'offline' ? event.detail : undefined,
+        status,
+        action: event.detail ?? event.status
+      });
+      if (event.status === 'blocked' || event.status === 'failed' || event.status === 'offline') {
+        void window.cth.runtimeSnapshot(agentId).then((snapshot) => {
+          if (!snapshot) return;
+          updateAgent(agentId, {
+            runtimeUncertainDeliveries: snapshot.uncertainDeliveries,
+            runtimeLastError: snapshot.lastError ?? event.detail
+          });
+        });
+      }
+    } else if (event.type === 'thread-started') {
+      updateAgent(agentId, { ...common, runtimeThreadId: event.threadId, runtimeSessionId: event.sessionId });
+    } else if (event.type === 'turn-started') {
+      updateAgent(agentId, { ...common, runtimeThreadId: event.threadId, runtimeTurnId: event.turnId, runtimeStatus: 'running', status: 'working', action: 'thinking' });
+    } else if (event.type === 'turn-completed' || event.type === 'turn-interrupted') {
+      updateAgent(agentId, { ...common, runtimeTurnId: undefined, runtimeStatus: 'idle', runtimeApproval: undefined, status: 'idle', action: event.type === 'turn-completed' ? 'idle' : 'stopped', carrying: undefined });
+    } else if (event.type === 'turn-failed') {
+      updateAgent(agentId, { ...common, runtimeTurnId: undefined, runtimeStatus: 'failed', status: 'ghost', action: event.message });
+    } else if (event.type === 'assistant-delta') {
+      const next = `${agent.recentAssistantText ?? ''}${event.text}`.slice(-8_000);
+      updateAgent(agentId, { ...common, recentAssistantText: next, recentTextTs: Date.now(), status: 'working', action: 'responding' });
+    } else if (event.type === 'assistant-message') {
+      updateAgent(agentId, { ...common, recentAssistantText: event.text.slice(-8_000), recentTextTs: Date.now(), status: 'working', action: 'responding' });
+    } else if (event.type === 'tool-started') {
+      updateAgent(agentId, { ...common, status: 'working', action: event.label });
+      useStore.getState().bumpToolCount(agentId);
+    } else if (event.type === 'approval-requested') {
+      updateAgent(agentId, { ...common, runtimeStatus: 'awaiting-approval', runtimeApproval: event.request, status: agent.isGod ? 'blocked' : 'waiting', action: event.request.title });
+    } else if (event.type === 'usage') {
+      const tokens = event.usage.totalTokens ?? event.usage.inputTokens;
+      const limit = event.usage.contextWindow;
+      const progress = tokens && limit ? Math.max(0, Math.min(8, Math.round((tokens / limit) * 8))) : agent.progress;
+      updateAgent(agentId, { ...common, runtimeUsage: event.usage, contextTokens: tokens, contextLimit: limit, progress });
+    } else if (event.type === 'instruction-sources') {
+      updateAgent(agentId, { ...common, runtimeInstructionSources: event.paths });
+    } else if (event.type === 'compacted') {
+      updateAgent(agentId, { ...common, status: 'idle', action: 'context compacted' });
+    }
+  }), []);
+
   // 2) Drive avatars from real hook events emitted by each agent's shim.
   useEffect(() => {
     return window.cth.onHiveHookEvent((e) => {
@@ -415,6 +498,7 @@ export function useHive(config: HarnessConfig | null): void {
       const { updateAgent, agents } = useStore.getState();
       const self = agents.find((a) => a.id === e.agentId);
       if (!self) return;
+      if (self.runtimeMode === 'codex-native') return;
       // Breaker precedence (#5C): a constrained/stopped agent stays 'looping'
       // regardless of in-flight tool/prompt/compact events.
       const blevel = breakerLevel.current[e.agentId];
@@ -506,7 +590,7 @@ export function useHive(config: HarnessConfig | null): void {
     const poll = async () => {
       const { agents, updateAgent } = useStore.getState();
       for (const a of agents) {
-        if (!a.ptyId) continue;
+        if (!a.ptyId || a.runtimeMode === 'codex-native') continue;
         // The status line pushes exact numbers after every response (effect
         // 2d) — this transcript poll only backfills agents whose status line
         // hasn't fired yet (e.g. freshly restored, no response so far).
@@ -594,7 +678,7 @@ export function useHive(config: HarnessConfig | null): void {
         // resume path compacts and then returns to the prompt without another
         // lifecycle event, the card would otherwise stay `compacting` forever
         // and the idle-only delivery queue could never hand it new work.
-        if (!a.ptyId || (a.status !== 'working' && a.status !== 'compacting')) continue;
+        if (!a.ptyId || a.runtimeMode === 'codex-native' || (a.status !== 'working' && a.status !== 'compacting')) continue;
         // Never fight the breaker pin (a constrained/stopped agent stays 'looping')
         // or a still-booting agent (its boot sequence is mid-type).
         const bl = breakerLevel.current[a.id];
@@ -728,7 +812,7 @@ export function useHive(config: HarnessConfig | null): void {
       // opened, holds delivery. Both blocks expire after half an hour, and when
       // one does we simply type after whatever is there — automation never
       // erases the user's text and never closes the user's menu.
-      if (!isTerminalAutomationSafe(target.ptyId, now)) return { sent: false };
+      if (target.runtimeMode !== 'codex-native' && !isTerminalAutomationSafe(target.ptyId, now)) return { sent: false };
       if (now - (lastFlush.current[target.id] ?? 0) < FLUSH_COOLDOWN_MS) return { sent: false };
       const flightKey = `${srcId}:${next.id}`;
       if (inFlight.has(flightKey)) return { sent: false };
@@ -738,11 +822,19 @@ export function useHive(config: HarnessConfig | null): void {
         const sent = await deliverWithAcknowledgement(
           // `instruction` (when present) is the authoritative text to type into
           // the PTY; UI/card surfaces continue to show the readable `text`.
-          () => submitToPty(
-            target.ptyId!,
-            wrap ? wrap(next) : (next.instruction ?? next.text),
-            inferAgentProvider(target.command, target.provider)
-          ),
+          () => target.runtimeMode === 'codex-native'
+            ? window.cth.runtimeSubmit(
+                target.id,
+                wrap ? wrap(next) : (next.instruction ?? next.text),
+                next.id
+              ).then((result) => {
+                if (!result.ok) throw new Error(result.error ?? 'native turn was rejected');
+              })
+            : submitToPty(
+                target.ptyId!,
+                wrap ? wrap(next) : (next.instruction ?? next.text),
+                inferAgentProvider(target.command, target.provider)
+              ),
           () => {
             removeQueuedMessage(srcId, next.id);
             // Zero the gauge on a DELIVERED /clear — the new session's context
@@ -895,6 +987,23 @@ export function useHive(config: HarnessConfig | null): void {
     if (!config?.onboardingComplete) return;
     const offSpawn = window.cth.onHiveAgentSpawned?.((rec) => {
       if (!rec?.id) return;
+      const syncNativeSnapshot = () => {
+        if (rec.runtimeMode !== 'codex-native') return;
+        void window.cth.runtimeSnapshot(rec.id).then((snapshot) => {
+          if (!snapshot) return;
+          useStore.getState().updateAgent(rec.id, {
+            runtimeMode: snapshot.mode,
+            runtimeStatus: snapshot.status,
+            runtimeThreadId: snapshot.threadId,
+            runtimeSessionId: snapshot.sessionId,
+            runtimeTurnId: snapshot.turnId,
+            runtimeInstructionSources: snapshot.instructionSources,
+            runtimeUsage: snapshot.usage,
+            runtimeUncertainDeliveries: snapshot.uncertainDeliveries,
+            runtimeLastError: snapshot.lastError
+          });
+        });
+      };
       // A MAIN-side fresh reuse keeps the durable role id but replaces the CLI
       // process. Refresh its launch contract so model/command/cwd survive the next
       // app restart instead of falling back to a provider default.
@@ -906,8 +1015,10 @@ export function useHive(config: HarnessConfig | null): void {
           command: rec.command,
           provider: rec.provider as Agent['provider'],
           model: rec.model,
+          runtimeMode: rec.runtimeMode ?? 'pty',
           worktreePath: rec.worktreePath,
         });
+        syncNativeSnapshot();
         return;
       }
       const key = (rec.name || rec.id).toLowerCase();
@@ -934,10 +1045,12 @@ export function useHive(config: HarnessConfig | null): void {
         command: rec.command,
         provider: rec.provider as Agent['provider'],
         model: rec.model,
+        runtimeMode: rec.runtimeMode ?? 'pty',
         isGod: false,
         recentTextTs: Date.now()
       };
       useStore.getState().addAgent(agent);
+      syncNativeSnapshot();
     });
     const offArchive = window.cth.onHiveAgentArchived?.((e) => {
       if (e?.id) useStore.getState().archiveAgent(e.id);
@@ -983,6 +1096,12 @@ export function useHive(config: HarnessConfig | null): void {
       const { agents, messageQueues, enqueueMessage } = useStore.getState();
       for (const a of agents) {
         if (!a.ptyId) continue;
+        if (a.runtimeMode === 'codex-native') {
+          if (!passesContextPressure(a, rule)) continue;
+          if (action === 'compact') void window.cth.runtimeCompact(a.id);
+          else void window.cth.runtimeNewThread(a.id);
+          continue;
+        }
         const provider = inferAgentProvider(a.command, a.provider);
         const command = action === 'clear'
           ? clearCommandForProvider(provider, rule.message)

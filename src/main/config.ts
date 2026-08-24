@@ -190,6 +190,9 @@ export interface HarnessConfig {
   registeredRepos: string[];
   /** When true, new agents are spawned with --permission-mode bypassPermissions. */
   autoMode: boolean;
+  /** Codex App Server rollout scope. `all` is the completed CAS5 default;
+   *  every agent can still request PTY compatibility explicitly. */
+  codexNativeRuntime?: 'off' | 'michael' | 'all';
   /** The command we run when spawning a new agent. */
   defaultCommand: string;
   /** Default model for newly spawned agents (e.g. 'claude-sonnet-4-6[1m]'); unset = CLI default. */
@@ -415,6 +418,7 @@ const DEFAULTS: HarnessConfig = {
   recentHives: [],
   registeredRepos: [],
   autoMode: SAFE_DEFAULTS.autoMode,
+  codexNativeRuntime: 'all',
   defaultCommand: 'claude',
   godProvider: 'claude',
   godModel: 'claude-opus-4-8',

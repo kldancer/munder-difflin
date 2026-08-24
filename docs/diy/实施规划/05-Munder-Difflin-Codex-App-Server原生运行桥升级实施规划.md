@@ -1,6 +1,6 @@
 # Munder Difflin Codex App Server 原生运行桥升级实施规划
 
-> 本文把 Munder、Hive、Team OS 与 Codex 的整套链路分析收敛为可实施合同。核心目标不是重写 Munder，也不是再造一个 Agent 框架，而是让 Munder 继续承担“本地专业团队操作系统”的产品职责，同时把 Codex 线程、回合、工具、审批、沙箱、状态和上下文管理交还给 Codex 原生 App Server。本文建立时只完成设计与规划，尚未据此改写运行主链。
+> 本文把 Munder、Hive、Team OS 与 Codex 的整套链路分析收敛为实施合同和 Gate 板。核心目标不是重写 Munder，也不是再造一个 Agent 框架，而是让 Munder 继续承担“本地专业团队操作系统”的产品职责，同时把 Codex 线程、回合、工具、审批、沙箱、状态和上下文管理交还给 Codex 原生 App Server。CAS0～CAS5 已于 2026-08-24 完成；本文保留设计理由、完成合同和动态证据路由，不再把已落地主链描述为未来设想。
 
 ## 1. 文档定位与总判断
 
@@ -51,6 +51,19 @@ Munder 当前的总体分层方向是正确的，最需要升级的不是地图�
 | P1 | 原生 Thread/Session/Goal/Compaction；Main 实时状态权威；最小 AGENTS；Skills 渐进披露；Plan `outputSchema` | 提升恢复、上下文效率、自动组队可靠性和用户可解释性 |
 | P2 | 被动长期评测；可选只读原生 subagent 实验；日志/备份/内部 Git 的独立治理 | 有长期价值，但不应阻塞黄金主链，也不能先增加系统复杂度 |
 
+### 1.5 实施状态与 Gate 板
+
+| Gate | 状态 | 已闭合事实 | 动态收据 |
+| --- | --- | --- | --- |
+| G0 协议适用性 | 完成 | Codex CLI 0.148.0 的 stdio initialize、Thread/Turn、事件、审批、Goal、Skills、Compaction、schema 与失败边界完成真实探测 | `.work/runtime/codex-app-server/g0-capability/` |
+| G1 只读镜像等价 | 完成 | JSONL 客户端、请求超时、stderr 隔离、未知事件、子进程监管、事件归一和无孤儿进程闭合 | `.work/runtime/codex-app-server/g1-shadow-events/` |
+| G2 Michael 原生控制 | 完成 | 新建/resume、`turn/start/steer/interrupt`、事件终端、原生状态权威和无 PTY 键盘投递真实闭合 | `.work/runtime/codex-app-server/g2-michael-native/` |
+| G3 Session/恢复/最小权限 | 完成 | list/read/resume、Goal、精确 writable roots、approve/deny、越界阻断、崩溃防重、唤醒核对闭合 | `.work/runtime/codex-app-server/g3-session-sandbox/` |
+| G4 上下文与自动组队 | 完成 | 最小角色 AGENTS、项目 AGENTS 发现、Skills 渐进加载、usage/compact、Michael `outputSchema` 计划和真实 Luna 交付闭合 | `.work/runtime/codex-app-server/g4-context-plan/` |
+| G5 全团队与兼容 | 完成 | 1 Sol + 5 Luna、12 个并发真实 Turn、IO 去重、运行索引免入 Hive Git、源码冷启动、单 Agent PTY 回退/恢复、Gemini/DeepSeek 回归、构建与 UI 闭合 | `.work/runtime/codex-app-server/g5-team-golden/` |
+
+当前产品默认 `codexNativeRuntime=all`：所有 Codex 员工走 App Server 原生快路；配置仍可收窄到 Michael 或关闭，单个员工可在 UI 显式退回 PTY compatibility。Gemini 与 DeepSeek 未被迁移或伪造成 App Server，继续使用各自现有 PTY/Hook/Plugin 运行桥。
+
 ## 2. 证据基线与官方设计依据
 
 ### 2.1 Munder 当前代码事实
@@ -61,10 +74,10 @@ Munder 当前的总体分层方向是正确的，最需要升级的不是地图�
 | --- | --- | --- |
 | 本机 Codex 为 `codex-cli 0.148.0` | `codex --version` | 可以进行真实协议探测，但版本升级必须重新握手，不能假定字段永久不变 |
 | `codex app-server` 已存在 | 当前 CLI 将命令标记为 experimental；默认支持 `stdio://`，也列出 Unix/WebSocket transport | 首版只采用本地 stdio；保留现有 PTY 回退，不把实验接口直接替换为唯一主链 |
-| Codex 自动模式使用 bypass | `src/shared/agentProvider.ts` 中 Codex preset 使用 `--dangerously-bypass-approvals-and-sandbox` | CAS3 必须收敛为精确 writable roots 与结构化审批 |
+| Codex PTY 自动模式保留 bypass 参数 | `src/shared/agentProvider.ts` 中 Codex compatibility preset 仍可在用户显式 Auto Mode 下使用 `--dangerously-bypass-approvals-and-sandbox`；原生路径不读取该参数 | 原生日常主链已收敛为精确 writable roots、`on-request` 与结构化审批；不能把 compatibility 参数误判为 native 默认 |
 | Codex 模型已区分总控与执行 | Michael 推荐 `gpt-5.6-sol`，worker 推荐 `gpt-5.6-luna` | 保留现有模型分工，不因运行桥迁移改变角色体系 |
-| 队列通过 PTY 消费 | `src/renderer/src/hooks/useHive.ts` 维护 boot、quiescence、queue、compact 等启发式 | CAS2 后 Codex 常规工作单不再模拟键盘，PTY 只作兼容入口 |
-| Fleet 不是完整实时权威 | `src/main/index.ts` 周期写 Fleet；当前静默判断和 Registry 状态存在历史限制 | CAS1 起从 App Server 事件构造运行状态，Fleet 只保存投影 |
+| 队列按 Runtime 能力消费 | Codex native 由 Main 直接 `runtimeSubmit`；`src/renderer/src/hooks/useHive.ts` 的 boot/quiescence/queue 启发式只服务 PTY Provider | Codex 常规工作单不模拟键盘，PTY 只作 Gemini/DeepSeek 与显式 compatibility 入口 |
+| Fleet 是运行投影 | `src/main/index.ts` 从 native snapshot 或兼容状态周期写 Fleet | Codex App Server event 是实时权威，Registry 管身份/恢复，Fleet 不反向驱动原生状态 |
 | Remote 能力探测依赖安装布局 | `src/shared/codexRemote.ts` 主要检查 `CODEX_HOME/packages` 和 standalone 路径 | 必须改成“实际命令 + 初始化握手 + 能力集”探测，不能由安装目录猜能力 |
 
 这些代码事实只用于界定迁移入口。实施时应先冻结当前 diff 和动态基线，再以当时源码为准定位准确写集合，不能用本文路径替代只读审计。
@@ -127,9 +140,9 @@ AgentRuntime
 - `thread/fork`、Goal、Compaction、结构化审批属于可选能力，不伪造跨 Provider 一致性；
 - Provider 公共状态只保留 `booting / idle / running / awaiting-approval / blocked / completed / failed / offline` 等用户需要的语义状态。
 
-### 3.3 先建立可观测等价，再切换控制权
+### 3.3 实施采用的切换顺序
 
-迁移顺序固定为：
+实际迁移按以下顺序完成，今后重做协议大版本迁移仍遵守同一 Gate：
 
 1. 先握手，并用专用探针 Thread 把事件只读镜像到调试状态，不改变真实 Michael 的任何用户行为；
 2. 对比 App Server 事件、Hook、PTY 和 Fleet，校准状态映射；
@@ -434,7 +447,7 @@ Codex 原生 subagent 在本规划中默认关闭，不属于 CAS0～CAS5 的必
 
 这些只在高级检查器、调试页或 `.work` 脱敏收据中按需查看。默认界面继续用“讨论中、规划中、执行中、验证中、等待你、完成”六个阶段。
 
-## 7. 实施分波、DAG 与时间预算
+## 7. 已执行分波、DAG 与原始时间预算
 
 ### 7.1 总体 DAG
 
@@ -455,7 +468,7 @@ flowchart TD
 
 `CAS4A` 与 `CAS4B` 只有在 CAS3 冻结公共协议和写集合后才可并行；其它阶段默认串行。并行时最多两个真实独立 Lane，必须写集合互斥并可单独验收。
 
-### 7.2 工作包
+### 7.2 工作包（完成记录）
 
 | 包 | 目标与建议写集合 | 非目标/禁止修改 | 验证 | 预算 |
 | --- | --- | --- | --- | --- |
@@ -648,8 +661,7 @@ G5 通过后更新以下权威，不在实施中提前宣告完成：
 | --- | --- |
 | 正式设计 `01` | Codex native/PTY 双运行桥、Thread/Turn 映射、实时事实权威、Hive 投递关系、Bootstrap 新链 |
 | 正式设计 `02` | App Server 子进程、Session、权限、备份恢复和降级安全边界 |
-| 正式设计 `04` | Team OS capability→Skill、Michael outputSchema 计划、独立员工与 Thread 分配 |
-| 正式设计 `04` | 将原 PTY/Session 描述校准为“业务合同”，引用本规划的原生运行实现，不重复维护协议细节 |
+| 正式设计 `04` | Team OS capability→Skill、Michael outputSchema 计划、独立员工与 Thread 分配；原 PTY/Session 描述校准为 Provider Runtime 业务合同，不复制协议细节 |
 | Team OS | 只更新必要的运行适配器接口、能力 id 和计划输出合同，不写 App Server 教程 |
 | Gate 板 | 记录 CAS0～CAS5 当前状态、适用验证和真实运行结论 |
 | `.work` | 保留动态版本、事件、截图、资源和运行收据；不进入长期正文 |
@@ -671,14 +683,12 @@ G5 通过后更新以下权威，不在实施中提前宣告完成：
 9. 5～6 Agent 真实运行、冷重启、崩溃恢复、资源与文件 IO 验证通过；
 10. 适用实现、验证、真实运行、`.work` 收据和长期文档全部闭合。
 
-## 13. 推荐下一步
+## 13. 完成后的维护入口
 
-下一轮只启动 `CAS0`，不直接改主链：
+CAS0～CAS5 已闭合，不再继续扩展本规划。后续维护只遵守以下短合同：
 
-1. 保护当前脏工作区并冻结 Codex PTY/Hook/Fleet 黄金基线；
-2. 从当前 `codex-cli` 生成或读取 App Server schema/TypeScript bindings；
-3. 用不含秘密的最小本地客户端完成 initialize、Thread、Turn、Event、interrupt 和 approval 能力探测；
-4. 输出版本化 capability matrix、事件时间线、失败边界和 G0 收据；
-5. G0 通过后再冻结 CAS1 的公共接口和写集合。
-
-这一步能用最低改动判断“当前本机 Codex App Server 是否足够稳定且具备所需能力”，避免先重构 Munder 再发现协议边界不适用。
+1. Codex CLI/App Server 升级时先重跑 G0 协议夹具和最小真实握手，再允许稳定办公室使用新版本；schema、审批响应或事件顺序变化必须显式兼容，不能用终端文本解析补洞。
+2. 原生主链回归优先运行 `test/codex-app-server.test.cjs`、`test/codex-native-runtime.test.cjs`、`test/tos-plan-coordinator.test.cjs`，再运行适用 Provider、Wave、Team OS、类型检查和 Electron 构建。
+3. 5～6 人规模的 CPU、内存、IO、Turn 延迟、重复投递和人工干预只做低成本长期观察；发现稳定问题再开新的实施规划，不把遥测系统复杂化。
+4. PTY compatibility 至少保留到真实长期使用证明可安全收窄；Gemini、DeepSeek 继续独立演进，不因 Codex 原生化被迫统一。
+5. 原生 subagent、共享 App Server daemon、远端 transport、Wave 5～6 外的新基础设施仍不属于本规划完成范围。

@@ -67,6 +67,18 @@ export function AskMeTab() {
     id ? (agents.find((a) => a.id === id)?.name ?? restorable.find((a) => a.id === id)?.name ?? id) : undefined;
 
   const waiting = tasks.filter(waitsOnHuman);
+  const nativeApprovals = agents.filter((agent) => agent.runtimeApproval);
+
+  const answerNativeApproval = async (agentId: string, requestId: string, accept: boolean) => {
+    if (sending) return;
+    setSending(`runtime:${requestId}`);
+    try {
+      const result = await window.cth.runtimeApproval(agentId, requestId, accept);
+      if (result.ok) useStore.getState().updateAgent(agentId, { runtimeApproval: undefined, status: 'working', action: accept ? 'approval accepted' : 'approval denied' });
+    } finally {
+      setSending(null);
+    }
+  };
 
   const sendAnswer = async (task: HiveTask) => {
     const text = (drafts[task.id] ?? '').trim();
@@ -141,7 +153,7 @@ export function AskMeTab() {
     // memory viewer uses. Pixelify Sans (font-ui) is too chunky for prose like
     // questions and answers. Display/badge bits keep their explicit faces.
     <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: 'var(--cth-paper-200)', padding: 10, display: 'flex', flexDirection: 'column', gap: 10, fontFamily: 'var(--cth-font-mono)' }}>
-      {waiting.length === 0 && (
+      {waiting.length === 0 && nativeApprovals.length === 0 && (
         <div style={{ textAlign: 'center', padding: '24px 12px', color: 'var(--cth-ink-500)', fontSize: 12 }}>
           {tr('askMe.empty')}<br />
           <span style={{ fontSize: 11, color: 'var(--cth-ink-300)' }}>
@@ -149,6 +161,26 @@ export function AskMeTab() {
           </span>
         </div>
       )}
+      {nativeApprovals.map((agent) => {
+        const request = agent.runtimeApproval!;
+        const key = `runtime:${request.id}`;
+        return (
+          <div key={key} style={{ background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)', padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <PixelBadge status="blocked" label={agent.name} />
+              <strong style={{ fontSize: 14 }}>{request.title}</strong>
+              <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--cth-ink-500)' }}>CODEX NATIVE</span>
+            </div>
+            <div style={{ fontSize: 14, whiteSpace: 'pre-wrap', color: 'var(--cth-ink-900)' }}>{request.detail}</div>
+            {request.command && <code style={{ padding: 6, background: 'var(--cth-paper-200)', overflowWrap: 'anywhere' }}>{request.command}</code>}
+            {request.cwd && <div style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>{request.cwd}</div>}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <PixelButton variant="primary" size="sm" disabled={sending === key} onClick={() => void answerNativeApproval(agent.id, request.id, true)}>允许本次</PixelButton>
+              <PixelButton variant="secondary" size="sm" disabled={sending === key} onClick={() => void answerNativeApproval(agent.id, request.id, false)}>拒绝</PixelButton>
+            </div>
+          </div>
+        );
+      })}
       {waiting.map((t) => {
         const open = openQuestion(t)!;
         const stuck = dependentsTree(t.id, tasks);

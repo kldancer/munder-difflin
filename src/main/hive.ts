@@ -19,7 +19,7 @@
  */
 import {
   existsSync, mkdirSync, readFileSync, writeFileSync, renameSync,
-  readdirSync, statSync, rmSync, appendFileSync, symlinkSync, copyFileSync, chmodSync
+  readdirSync, statSync, rmSync, appendFileSync, symlinkSync, copyFileSync, cpSync, chmodSync
 } from 'node:fs';
 import { join, dirname, basename, isAbsolute, resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -36,6 +36,7 @@ import {
   type AgentProvider
 } from '../shared/agentProvider';
 import { MCP_CATALOG } from '../shared/mcpCatalog';
+import type { AgentRuntimeMode, AgentRuntimeStatus } from '../shared/agentRuntime';
 import { expandTilde } from './fs';
 
 /** The subset of HarnessConfig the hive consumes for the default-MCP merge.
@@ -156,6 +157,11 @@ export interface RegistryAgent extends AgentMeta {
    *  resume after a crash/restart) AND the cost accounting/dedup key on every
    *  AgentUsageSample / cost-ledger row. */
   sessionId?: string;
+  /** Stable native recovery facts. `sessionId` keeps the CLI-compatible Codex
+   * thread id while `nativeSessionId` names the wider session tree. */
+  runtimeMode?: AgentRuntimeMode;
+  nativeThreadId?: string;
+  nativeSessionId?: string;
   /** Whether `cwd` is actually usable for a (re)spawn — i.e. an ABSOLUTE path
    *  that exists as a directory. Computed + persisted at spawn so the roster
    *  reliably exposes each worker's environment validity. A non-absolute fragment
@@ -208,6 +214,9 @@ function shortRand(): string {
 const MINE_IGNORE_LINES = [
   'settings.json',
   'cursor.json',
+  // App Server's bounded Thread/Turn/delivery recovery index is runtime state,
+  // not semantic memory and not a useful Hive-git commit on every event.
+  'runtime.json',
   'inbox/',
   'outbox/',
   // Per-agent Codex runtime state may contain an auth.json symlink (or a
@@ -489,7 +498,16 @@ export class HiveManager {
   ensureHive(): void {
     const root = this.root();
     if (!root) return;
-    mkdirSync(join(root, 'agents'), { recursive: true });
+    const agentsRoot = join(root, 'agents');
+    mkdirSync(agentsRoot, { recursive: true });
+    // Refresh ignores for existing roles before any Hive commit. This is also the
+    // forward migration that keeps newly introduced runtime.json indexes from
+    // being re-added when an older Hive already has several dormant agents.
+    try {
+      for (const entry of readdirSync(agentsRoot, { withFileTypes: true }).slice(0, 512)) {
+        if (entry.isDirectory()) ensureMineIgnore(join(agentsRoot, entry.name));
+      }
+    } catch { /* a partially unreadable roster must not block startup */ }
 
     const locale = this.getLocale() === 'zh-CN' ? 'zh-CN' : 'en-US';
     const generatedProtocol = locale === 'zh-CN' ? PROTOCOL_MD_ZH : PROTOCOL_MD_EN;
@@ -529,7 +547,7 @@ export class HiveManager {
 
     // Keep the churny/ephemeral live files out of the hive git repo.
     const gitignore = join(root, '.gitignore');
-    const want = ['fleet.json', 'hooks.sock', 'cost-ledger.jsonl', '.DS_Store'];
+    const want = ['fleet.json', 'hooks.sock', 'cost-ledger.jsonl', 'cache/', '.DS_Store'];
     let lines: string[] = [];
     if (existsSync(gitignore)) { try { lines = readFileSync(gitignore, 'utf8').split('\n'); } catch { lines = []; } }
     const missing = want.filter((w) => !lines.includes(w));
@@ -621,7 +639,10 @@ export class HiveManager {
     // app-resources skills/ dir on every spawn (same policy as identity.md), so an
     // agent always rides with the shipped safe skill set. Tolerant: a missing or
     // partial source dir is a no-op (Kevin populates the resource dir in lp-manifest).
-    if (opts.skillsDir) this.copyBundledSkills(opts.skillsDir, join(dir, '.claude', 'skills'));
+    if (opts.skillsDir) {
+      this.copyBundledSkills(opts.skillsDir, join(dir, '.claude', 'skills'));
+      this.copyBundledSkills(opts.skillsDir, join(dir, '.codex', 'skills'));
+    }
 
     const memory = join(dir, 'memory.md');
     const memoryEn = `# Memory — ${meta.name} (${meta.id})\n\n_Append durable facts, decisions, and context below._\n`;
@@ -749,6 +770,8 @@ export class HiveManager {
             else if (desc.shim === 'codex') {
               env.CODEX_HOME = this.installCodexHooks(
                 dir,
+                meta,
+                root,
                 cwd.valid ? meta.cwd : undefined,
                 !!opts.codexTrustProject
               );
@@ -904,6 +927,45 @@ export class HiveManager {
       this.appendLog({ kind: 'session', agentId, sessionId });
       this.commit(`hive: session ${agentId}`);
     } catch { /* best-effort — never crash a hook handler */ }
+  }
+
+  /** Project native runtime state into the identity registry without persisting
+   * streaming model content or raw App Server messages. */
+  recordNativeRuntime(
+    agentId: string,
+    runtime: {
+      mode: AgentRuntimeMode;
+      status: AgentRuntimeStatus;
+      threadId?: string;
+      sessionId?: string;
+    }
+  ): void {
+    const root = this.root();
+    if (!root) return;
+    try {
+      const reg = this.registry();
+      const agent = reg.agents[agentId];
+      if (!agent) return;
+      const status: RegistryAgent['status'] = runtime.status === 'running'
+        ? 'working'
+        : runtime.status === 'awaiting-approval' || runtime.status === 'blocked'
+          ? 'blocked'
+          : runtime.status === 'offline' || runtime.status === 'failed'
+            ? 'gone'
+            : 'idle';
+      const changed = agent.runtimeMode !== runtime.mode
+        || agent.nativeThreadId !== runtime.threadId
+        || agent.nativeSessionId !== runtime.sessionId
+        || agent.status !== status;
+      if (!changed) return;
+      agent.runtimeMode = runtime.mode;
+      agent.nativeThreadId = runtime.threadId;
+      agent.nativeSessionId = runtime.sessionId;
+      if (runtime.threadId) agent.sessionId = runtime.threadId;
+      agent.status = status;
+      agent.lastSeen = Date.now();
+      this.writeJson(join(root, 'registry.json'), reg);
+    } catch { /* runtime projection is best-effort */ }
   }
 
   /** The last known session_id for an agent, or undefined. Used to build a
@@ -1781,7 +1843,7 @@ export class HiveManager {
    *  untouched. The user's ~/.codex/auth.json is linked in and their config.toml is
    *  copied + extended (login + model/provider/trust settings still apply).
    *  Returns the CODEX_HOME path for the caller to put in the worker's env. */
-  private installCodexHooks(dir: string, projectCwd?: string, trustProject = false): string {
+  private installCodexHooks(dir: string, meta: AgentMeta, root: string, projectCwd?: string, trustProject = false): string {
     const home = join(dir, '.codex');
     try {
       mkdirSync(home, { recursive: true });
@@ -1805,6 +1867,69 @@ export class HiveManager {
         try {
           symlinkSync(packagesSrc, packagesDest, process.platform === 'win32' ? 'junction' : 'dir');
         } catch { /* remote integration falls back to a local TUI if unavailable */ }
+      }
+      // The remote plugin catalog is public, read-mostly installation metadata —
+      // not role/session state. Codex otherwise downloads/copies the same ~13 MB
+      // catalog into every isolated CODEX_HOME, which made a six-person floor add
+      // ~80 MB of redundant Hive I/O in the CAS5 pressure run. Keep exactly one
+      // Hive-local copy while preserving strict per-agent isolation for auth,
+      // sqlite state, sessions, logs, instructions and skills.
+      //
+      // Seed only the most recently updated global catalog file. This avoids six
+      // freshly started App Servers racing to populate an empty shared directory,
+      // without importing the user's historical catalog archive (currently much
+      // larger than the active file). The cache is ignored by Hive git and may be
+      // regenerated by Codex at any time; no prompt, transcript or credential is
+      // copied here.
+      const sharedCatalog = join(root, 'cache', 'codex', 'remote_plugin_catalog');
+      mkdirSync(sharedCatalog, { recursive: true });
+      try {
+        if (readdirSync(sharedCatalog).length === 0) {
+          const userCatalog = join(userHome, 'cache', 'remote_plugin_catalog');
+          const latest = readdirSync(userCatalog, { withFileTypes: true })
+            .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+            .map((entry) => ({
+              name: entry.name,
+              mtimeMs: statSync(join(userCatalog, entry.name)).mtimeMs
+            }))
+            .sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
+          if (latest) copyFileSync(join(userCatalog, latest.name), join(sharedCatalog, latest.name));
+        }
+      } catch { /* an empty cache is safe; Codex will repopulate it */ }
+      const cacheHome = join(home, 'cache');
+      const catalogDest = join(cacheHome, 'remote_plugin_catalog');
+      mkdirSync(cacheHome, { recursive: true });
+      if (!existsSync(catalogDest)) {
+        try {
+          symlinkSync(sharedCatalog, catalogDest, process.platform === 'win32' ? 'junction' : 'dir');
+        } catch { /* preserve compatibility where directory links are unavailable */ }
+      }
+      // Remote plugin payloads are likewise immutable, versioned installation
+      // artifacts. App Server materializes the same enabled plugin versions under
+      // every isolated home (~29 MB per agent in the CAS5 run), even though their
+      // bytes contain no role/session state. Seed the Hive-local shared cache from
+      // the user's existing remote-plugin cache once, then let each CODEX_HOME link
+      // to it. Per-agent plugin staging and configuration remain outside this link.
+      const sharedPluginCache = join(root, 'cache', 'codex', 'plugins');
+      mkdirSync(sharedPluginCache, { recursive: true });
+      try {
+        if (readdirSync(sharedPluginCache).length === 0) {
+          const userRemotePlugins = join(userHome, 'plugins', 'cache', 'openai-curated-remote');
+          if (existsSync(userRemotePlugins)) {
+            cpSync(userRemotePlugins, join(sharedPluginCache, 'openai-curated-remote'), {
+              recursive: true,
+              errorOnExist: false
+            });
+          }
+        }
+      } catch { /* Codex can install a missing immutable version on demand */ }
+      const pluginsHome = join(home, 'plugins');
+      const pluginCacheDest = join(pluginsHome, 'cache');
+      mkdirSync(pluginsHome, { recursive: true });
+      if (!existsSync(pluginCacheDest)) {
+        try {
+          symlinkSync(sharedPluginCache, pluginCacheDest, process.platform === 'win32' ? 'junction' : 'dir');
+        } catch { /* isolated per-agent plugin caches remain a safe fallback */ }
       }
       // Wire lifecycle hooks via config.toml `[hooks]` tables — the user-layer
       // discovery surface Codex actually scans. (A bare $CODEX_HOME/hooks.json is
@@ -1915,6 +2040,29 @@ export class HiveManager {
         }
       }
       writeFileSync(existingAgentConfigPath, config, 'utf8');
+      // Codex owns layered instruction discovery. Keep the per-role global layer
+      // compact and stable; project AGENTS.md files remain authoritative nearer
+      // the cwd, while volatile roster/task facts stay in Hive files and Turns.
+      const language = meta.replyLanguage === 'zh-CN'
+        ? '面向人类和同事使用简体中文；机器字段、命令、代码、路径和逐字引用保持原样。'
+        : 'Use English for human-facing communication; preserve machine fields, commands, code, paths, and literal quotes.';
+      const role = meta.role ?? (meta.isGod ? '总控（god）' : 'Agent');
+      const orchestrator = meta.isGod
+        ? '你是总控：负责结论澄清、DAG、分配、跨 Lane Gate、集成与最终复核；普通实现优先交给真正独立的员工。开始推进时先按项目 AGENTS、实施规范和正式设计形成机器可校验计划，不要求用户预先拆任务。'
+        : '只承担本次被分配的目标与写集合；跨范围、冲突或需要统一签字时向 god 汇报。';
+      writeFileSync(join(home, 'AGENTS.md'), [
+        `# Munder 员工合同：${meta.name} (${meta.id})`,
+        '',
+        `- 角色：${role}`,
+        `- 稳定身份：${join(dir, 'identity.md')}`,
+        `- 长期记忆：${join(dir, 'memory.md')}（仅记录可跨会话复用的事实与决策，不复制 Transcript）`,
+        `- 私有信箱：${join(dir, 'inbox')}；发给同事的消息写入 ${join(dir, 'outbox')}，格式按需读取 ${join(root, 'PROTOCOL.md')}。`,
+        `- 共享团队事实按需读取 ${join(root, 'tasks.json')}、${join(root, 'fleet.json')} 和 ${join(root, 'registry.json')}；不要把动态 roster 复制进提示词。`,
+        `- ${language}`,
+        `- ${orchestrator}`,
+        '- 每个新任务只读取必要的记忆、信箱、项目合同与 Skill；同一 Thread 不重复复述本文件。',
+        ''
+      ].join('\n'), 'utf8');
     } catch (e) { console.error('[hive] installCodexHooks failed:', e); }
     return home;
   }
@@ -2236,11 +2384,27 @@ export class HiveManager {
     console.warn('[hive] untracked the cost ledger from the hive repo');
   }
 
+  /** Forward migration: runtime.json used to be picked up by Hive's broad
+   * `git add -A`. Keep the recovery files on disk, but remove legacy copies from
+   * the internal index after ensureHive refreshed every agent's .gitignore. */
+  private untrackRuntimeIndexes(root: string): void {
+    const tracked = this.git(['ls-files', '--', 'agents/*/runtime.json'], root);
+    if (!tracked.ok || !tracked.out.trim()) return;
+    const paths = tracked.out.split('\n')
+      .map((path) => path.trim())
+      .filter((path) => /^agents\/[^/]+\/runtime\.json$/.test(path))
+      .slice(0, 512);
+    if (!paths.length) return;
+    this.git(['rm', '--cached', '-q', '--ignore-unmatch', '--', ...paths], root);
+    console.warn(`[hive] untracked ${paths.length} native runtime index(es) from the hive repo`);
+  }
+
   /** Commit all hive changes. No-op if there is nothing staged. */
   commit(message: string): void {
     const root = this.root();
     if (!root || !existsSync(join(root, '.git'))) return;
     this.untrackCostLedger(root);
+    this.untrackRuntimeIndexes(root);
     for (let attempt = 0; attempt < 5; attempt++) {
       this.clearStaleLock(root);
       const add = this.git(['add', '-A'], root);

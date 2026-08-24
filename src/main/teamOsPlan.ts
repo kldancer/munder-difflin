@@ -52,6 +52,67 @@ export interface TeamOsPlanManifest {
   gates: Array<{ id: string; label: string; taskIds: string[]; evidence: string[] }>;
 }
 
+/** JSON Schema used only as a model-output constraint. Authorization, role,
+ * workspace, DAG and write-set correctness remain Main-process decisions in
+ * validatePlanManifest; schema validity never grants authority. */
+export function buildTeamOsPlanOutputSchema(args: {
+  requestId: string;
+  projectId: string;
+  localWrite: boolean;
+}): Record<string, unknown> {
+  const stringArray = { type: 'array', maxItems: TEAM_OS_PLAN_LIMITS.listItems, items: { type: 'string' } };
+  const pathArray = { type: 'array', maxItems: TEAM_OS_PLAN_LIMITS.pathsPerTask, items: { type: 'string' } };
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['version', 'requestId', 'projectId', 'outcome', 'nonGoals', 'authorization', 'tasks', 'gates'],
+    properties: {
+      version: { type: 'integer', enum: [1] },
+      requestId: { type: 'string', enum: [args.requestId] },
+      projectId: { type: 'string', enum: [args.projectId] },
+      outcome: { type: 'string' },
+      nonGoals: stringArray,
+      authorization: {
+        type: 'object', additionalProperties: false,
+        required: ['localWrite', 'gitWrite', 'remoteWrite', 'productionWrite', 'destructive'],
+        properties: {
+          localWrite: { type: 'boolean', enum: [args.localWrite] },
+          gitWrite: { type: 'boolean', enum: [false] }, remoteWrite: { type: 'boolean', enum: [false] },
+          productionWrite: { type: 'boolean', enum: [false] }, destructive: { type: 'boolean', enum: [false] }
+        }
+      },
+      tasks: {
+        type: 'array', minItems: 1, maxItems: TEAM_OS_PLAN_LIMITS.tasks,
+        items: {
+          type: 'object', additionalProperties: false,
+          required: [
+            'id', 'title', 'objective', 'roleId', 'capabilityProfileIds', 'workspaceKey',
+            'dependsOn', 'read', 'write', 'acceptance', 'validation', 'stopConditions',
+            'targetMinutes', 'hardStopMinutes'
+          ],
+          properties: {
+            id: { type: 'string' }, title: { type: 'string' }, objective: { type: 'string' },
+            roleId: { type: 'string' }, capabilityProfileIds: stringArray,
+            workspaceKey: { type: ['string', 'null'] }, dependsOn: stringArray,
+            read: pathArray, write: pathArray, acceptance: stringArray,
+            validation: stringArray, stopConditions: stringArray,
+            targetMinutes: { type: ['integer', 'null'], minimum: 1, maximum: 1440 },
+            hardStopMinutes: { type: ['integer', 'null'], minimum: 1, maximum: 1440 }
+          }
+        }
+      },
+      gates: {
+        type: 'array', maxItems: TEAM_OS_PLAN_LIMITS.gates,
+        items: {
+          type: 'object', additionalProperties: false,
+          required: ['id', 'label', 'taskIds', 'evidence'],
+          properties: { id: { type: 'string' }, label: { type: 'string' }, taskIds: stringArray, evidence: stringArray }
+        }
+      }
+    }
+  };
+}
+
 export interface TeamOsPlanValidationContext {
   requestId: string;
   project: TeamOsProjectSnapshot;
@@ -361,6 +422,9 @@ export function buildStartFromConclusionPrompt(args: {
   workspaces: TeamOsWorkspace[];
   submitPath: string;
   localWrite: boolean;
+  delivery?: 'file' | 'structured';
+  roleIds?: string[];
+  capabilityProfileIds?: string[];
 }): string {
   const references = args.project.references.filter((reference) => reference.exists)
     .map((reference) => `- ${reference.group}.${reference.key}: ${reference.absolutePath}`);
@@ -379,9 +443,16 @@ export function buildStartFromConclusionPrompt(args: {
     '可选 workspace（只按需要选择）：',
     ...workspaceLines,
     '',
-    '输出一个 version=1 的 JSON Plan Manifest，并原子写入：',
-    args.submitPath,
-    '可先写同目录临时文件，再 rename；不要在文件中保存 Transcript、密钥或环境秘密。',
+    `可用职业 roleId：${args.roleIds?.join('、') || '以 Team OS catalog 为准'}`,
+    `可用能力画像 capabilityProfileId：${args.capabilityProfileIds?.join('、') || '以 Team OS catalog 为准'}`,
+    '',
+    args.delivery === 'structured'
+      ? '直接返回一个 version=1 的 JSON Plan Manifest；不要自行写 submit.json，Main Process 会原子保存结构化结果。'
+      : '输出一个 version=1 的 JSON Plan Manifest，并原子写入：',
+    ...(args.delivery === 'structured' ? [] : [
+      args.submitPath,
+      '可先写同目录临时文件，再 rename；不要在文件中保存 Transcript、密钥或环境秘密。'
+    ]),
     '',
     'Manifest 顶层字段：version、requestId、projectId、outcome、nonGoals、authorization、tasks、gates。',
     'authorization 只能是 localWrite=' + String(args.localWrite) + '，且 gitWrite/remoteWrite/productionWrite/destructive 必须全部为 false。',
@@ -389,6 +460,8 @@ export function buildStartFromConclusionPrompt(args: {
     '路径相对 task workspace 解析；真正并行的 task 写集合必须互斥，同写集合必须通过 dependsOn 串行化。',
     '默认单一端到端 owner；只有能力缺口、可独立验收且写集合互斥时才增加并行角色。',
     'gates 每项包含 id、label、taskIds、evidence。',
-    '写完后用一句话告诉用户计划已提交；系统将负责校验、创建卡片、复用/创建 Agent、Session、PTY 和后续 Gate 投影。'
+    args.delivery === 'structured'
+      ? '只返回符合 schema 的 JSON；系统将负责校验、落盘、创建卡片、复用/创建 Agent、Session 和后续 Gate 投影。'
+      : '写完后用一句话告诉用户计划已提交；系统将负责校验、创建卡片、复用/创建 Agent、Session、PTY 和后续 Gate 投影。'
   ].join('\n');
 }

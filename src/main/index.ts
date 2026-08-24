@@ -109,9 +109,12 @@ import {
 import {
   TeamOsPlanCoordinator,
   listPlanningStates,
-  startFromConclusion
+  startFromConclusion,
+  submitPlanningResult
 } from './teamOsPlanning';
 import { formatTeamOsSpawnCommand, type TeamOsAllocationDecision } from './teamOsPlan';
+import { CodexNativeRuntimeManager } from './codexNativeRuntime';
+import type { RuntimeEvent, RuntimeSessionSnapshot } from '../shared/agentRuntime';
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
 
@@ -255,6 +258,12 @@ async function enableCodexRemoteForSpawn(
 /** Live PTY id → its hive agent id, recorded at spawn. The pty:kill handler only
  *  gets the PTY id, so this lets a closed tab archive the right registry agent. */
 const ptyToAgent = new Map<string, string>();
+/** Native runtime ids intentionally share the renderer's historical `ptyId`
+ * slot during the gradual UI migration, but never enter PtyManager. */
+const nativeRuntimeToAgent = new Map<string, string>();
+const nativeAgentToRuntime = new Map<string, string>();
+const nativeLastOutputAt = new Map<string, number>();
+const nativeTerminalBuffers = new Map<string, string>();
 /** PTY id → the spawn it should auto restart-and-continue into once a first-time
  *  CLI install finishes. The missing-CLI short-circuit runs the engine's installer
  *  in this PTY; when it exits cleanly the exit handler re-runs the SAME spawn (with
@@ -270,6 +279,67 @@ const hive = new HiveManager(
   },
   () => readConfig().locale
 );
+
+function nativeEventText(event: RuntimeEvent): string {
+  switch (event.type) {
+    case 'assistant-delta': return event.text;
+    case 'assistant-message': return '';
+    case 'reasoning-delta': return '';
+    case 'thread-started': return `\r\n[原生会话] 已连接\r\n`;
+    case 'turn-started': return `\r\n[执行] 开始\r\n`;
+    case 'turn-completed': return `\r\n[执行] 完成\r\n`;
+    case 'turn-interrupted': return `\r\n[执行] 已停止\r\n`;
+    case 'turn-failed': return `\r\n[错误] ${event.message}\r\n`;
+    case 'tool-started': return `\r\n[工具] ${event.label}\r\n`;
+    case 'tool-completed': return `\r\n[工具] ${event.label} · ${event.ok ? '完成' : '失败'}\r\n`;
+    case 'approval-requested': return `\r\n[等待你] ${event.request.title}\r\n`;
+    case 'compacted': return `\r\n[上下文] 已压缩并保留当前会话\r\n`;
+    case 'warning': return event.code === 'UNKNOWN_NOTIFICATION' ? '' : `\r\n[运行提示] ${event.message}\r\n`;
+    default: return '';
+  }
+}
+
+const nativeRuntime = new CodexNativeRuntimeManager({
+  onEvent: (agentId, event) => {
+    const wc = liveWebContents();
+    try { wc?.send('runtime:event', { agentId, event }); } catch { /* renderer may restart */ }
+    const runtimeId = nativeAgentToRuntime.get(agentId);
+    const rendered = nativeEventText(event);
+    if (runtimeId && rendered) {
+      nativeLastOutputAt.set(runtimeId, Date.now());
+      try { wc?.send(`pty:data:${runtimeId}`, rendered); } catch { /* renderer may restart */ }
+    }
+  },
+  onSnapshot: (snapshot: RuntimeSessionSnapshot) => {
+    hive.recordNativeRuntime(snapshot.agentId, {
+      mode: snapshot.mode,
+      status: snapshot.status,
+      threadId: snapshot.threadId,
+      sessionId: snapshot.sessionId
+    });
+  },
+  onApproval: (agentId, request) => {
+    try { liveWebContents()?.send('runtime:approvalRequested', { agentId, request }); } catch { /* renderer may restart */ }
+  },
+  onTurnOutput: (agentId, result) => {
+    const prefix = 'team-os-plan:';
+    if (agentId !== 'god' || !result.messageId.startsWith(prefix)) return;
+    const requestId = result.messageId.slice(prefix.length);
+    const submitted = submitPlanningResult({
+      harnessHome: readConfig().harnessHome ?? undefined,
+      requestId,
+      value: result.text
+    });
+    const runtimeId = nativeAgentToRuntime.get(agentId);
+    if (!submitted.ok) {
+      if (runtimeId) {
+        try { liveWebContents()?.send(`pty:data:${runtimeId}`, `\r\n[计划校验] 结构化结果未接收：${submitted.error.message}\r\n`); } catch { /* renderer may restart */ }
+      }
+      return;
+    }
+    void teamOsPlanCoordinator.tick();
+  }
+});
 async function provisionTeamOsAgent(
   decision: TeamOsAllocationDecision,
   freshReuse = false,
@@ -331,7 +401,8 @@ async function provisionTeamOsAgent(
         command: formatTeamOsSpawnCommand(command, launchArgs),
         model: workerModel,
         role: decision.roleId,
-        worktreePath: result.worktreePath
+        worktreePath: result.worktreePath,
+        runtimeMode: result.runtimeMode
       });
     } catch { /* renderer may be restarting */ }
   }
@@ -681,7 +752,7 @@ type KeepAwakeMode = 'prevent-app-suspension' | 'prevent-display-sleep';
 let keepAwakeId: number | null = null;
 let keepAwakeMode: KeepAwakeMode | null = null;
 function syncKeepAwake(): void {
-  const live = ptyManager.list().length > 0;
+  const live = ptyManager.list().length > 0 || nativeRuntime.list().length > 0;
   const desired: KeepAwakeMode | null = live
     ? (readConfig().strongKeepalive ? 'prevent-display-sleep' : 'prevent-app-suspension')
     : null;
@@ -942,13 +1013,11 @@ function syncContextTriggers(): void {
   }
 }
 
-/** Startup migration (#57/#58): archive every agent entry that is `archived:false`
- *  but has NO live PTY. This runs in bootstrapHiveServices, BEFORE the renderer can
- *  respawn anything, so at this point NO agent owns a PTY — every `archived:false`
- *  entry is therefore a stale carry-over from a prior session that quit/crashed
- *  WITHOUT archiving (e.g. the pre-acc13a3 'assistant' Dwight entry). Left as-is
- *  they have no live PTY, so the breaker beat steers them and the steer bounces to
- *  GOD as a requires_reply GOD can't clear → inbox flood.
+/** Startup migration (#57/#58): archive every legacy agent entry that is
+ *  `archived:false` but has no live PTY. This runs before the renderer respawns
+ *  anything. Agents whose persisted runtime mode is `codex-native` are explicitly
+ *  excluded: their App Server is restored after bootstrap, so treating them as PTY
+ *  orphans causes a false archive/unarchive cycle and needless Hive commits.
  *
  *  "No live PTY" = ptyForAgent(id) === undefined (ptyToAgent is populated only at
  *  spawn and pruned on teardown). God is never archived. A user's real agents are
@@ -961,6 +1030,7 @@ function archiveOrphanedAgents(): void {
     for (const [id, a] of Object.entries(reg.agents)) {
       if (a.archived) continue;
       if (id === reg.godId) continue;        // god is never archived
+      if (a.runtimeMode === 'codex-native') continue; // restored by the native runtime path
       if (ptyForAgent(id)) continue;         // has a live PTY → genuinely active
       hive.setArchived(id, true);            // stale archived:false orphan → archive
       console.log('[migration] archived orphaned agent (no live PTY):', id);
@@ -1089,6 +1159,7 @@ function isFloorQuiet(thresholdMs: number): boolean {
     }
   }
   for (const t of ptyManager.list()) times.push(t.lastOutputAt);
+  for (const at of nativeLastOutputAt.values()) times.push(at);
   if (times.length === 0) return false; // nothing to judge → don't fire
   return Date.now() - Math.max(...times) > thresholdMs;
 }
@@ -1116,7 +1187,7 @@ function lastCoordinationAt(agentId: string): number {
 /** PTY id owning a given agent id, or undefined. */
 function ptyForAgent(agentId: string): string | undefined {
   for (const [ptyId, a] of ptyToAgent) if (a === agentId) return ptyId;
-  return undefined;
+  return nativeAgentToRuntime.get(agentId);
 }
 
 /** "Stuck" = some worker's PTY is actively printing (recent output) while its
@@ -2392,7 +2463,7 @@ function createWindow(opts: { floor?: boolean } = {}): BrowserWindow {
       return;
     }
     // Primary window: existing app-wide quit warning (renderer modal).
-    const count = ptyManager.list().length;
+    const count = ptyManager.list().length + nativeRuntime.list().length;
     if (count === 0) return;
     e.preventDefault();
     win.focus();
@@ -2496,7 +2567,7 @@ function installAppMenu(): void {
 // ─── IPC: pty lifecycle ─────────────────────────────────────────────────────
 /** Spawn options shared by the `pty:spawn` IPC handler and the god-triggered
  *  ephemeral-worker watcher. */
-type AgentSpawnOptions = SpawnOptions & { hive?: AgentMeta; isolate?: boolean; resume?: boolean; requireResume?: boolean; resumeSessionId?: string; provider?: AgentProvider; noAutoInstall?: boolean };
+type AgentSpawnOptions = SpawnOptions & { hive?: AgentMeta; isolate?: boolean; resume?: boolean; requireResume?: boolean; resumeSessionId?: string; provider?: AgentProvider; noAutoInstall?: boolean; runtimeMode?: 'codex-native' | 'pty' };
 
 ipcMain.handle('pty:spawn', async (evt, opts: AgentSpawnOptions) => {
   if (!opts || typeof opts.id !== 'string' || typeof opts.cwd !== 'string' || typeof opts.command !== 'string') {
@@ -2514,7 +2585,7 @@ ipcMain.handle('pty:spawn', async (evt, opts: AgentSpawnOptions) => {
  *  it can ALSO be invoked by the god-triggered ephemeral-worker watcher (which has
  *  no renderer `evt`). `owner` is the window that should receive this PTY's output
  *  (null → the primary window). Behavior-identical to the prior inline handler. */
-async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebContents | null): Promise<{ ok: boolean; error?: string; cwd?: string; worktreePath?: string; resumeNotFound?: boolean; resumed?: boolean; seedPrompt?: string }> {
+async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebContents | null): Promise<{ ok: boolean; error?: string; cwd?: string; worktreePath?: string; resumeNotFound?: boolean; resumed?: boolean; seedPrompt?: string; runtimeMode?: 'codex-native' | 'pty' }> {
   // ── cwd INGESTION — expand `~` exactly once, here ───────────────────────────
   // This is the single door every agent spawn comes through (`pty:spawn` IPC and
   // the god-triggered ephemeral-worker watcher), so it is where a user-typed
@@ -2677,6 +2748,63 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
     } catch (e) {
       // Hive provisioning is best-effort; never block a spawn on it.
       console.error('[hive] ensureAgent failed:', e);
+    }
+  }
+  // Codex native fast path. Hive provisioning above is shared with PTY mode so
+  // identity, memory and isolated CODEX_HOME remain compatible, but the long
+  // injected positional bootstrap is deliberately NOT sent to App Server.
+  if (provider === 'codex' && opts.hive && hive.enabled()) {
+    const cfg = readConfig();
+    const scope = cfg.codexNativeRuntime ?? 'all';
+    const nativeRequested = opts.runtimeMode === 'codex-native'
+      || (opts.runtimeMode !== 'pty' && (scope === 'all' || (scope === 'michael' && opts.hive.isGod)));
+    if (nativeRequested) {
+      const agentId = opts.hive.id;
+      if (nativeRuntime.has(agentId)) return { ok: false, error: `native runtime already exists: ${agentId}` };
+      const root = hive.root();
+      if (!root) return { ok: false, error: 'hive root is unavailable' };
+      const agentDir = join(root, 'agents', agentId);
+      const modelIndex = (opts.args ?? []).indexOf('--model');
+      const model = modelIndex >= 0 ? opts.args?.[modelIndex + 1] : undefined;
+      const explicitThread = typeof opts.resumeSessionId === 'string' ? opts.resumeSessionId.trim() : '';
+      const resumeThreadId = explicitThread || (opts.resume ? hive.lastSession(agentId) : undefined);
+      nativeRuntimeToAgent.set(opts.id, agentId);
+      nativeAgentToRuntime.set(agentId, opts.id);
+      nativeLastOutputAt.set(opts.id, Date.now());
+      nativeTerminalBuffers.set(opts.id, '');
+      const started = await nativeRuntime.start({
+        agentId,
+        agentName: opts.hive.name,
+        role: opts.hive.role ?? (opts.hive.isGod ? 'orchestrator' : 'agent'),
+        cwd: opts.cwd,
+        agentDir,
+        command: resolveCliCommand(opts.command),
+        env: {
+          ...process.env,
+          ...(opts.env ?? {}),
+          ...nonInteractiveEnvForProvider(provider)
+        },
+        model,
+        resumeThreadId: resumeThreadId || undefined,
+        requireResume: opts.requireResume,
+        writableRoots: [opts.cwd, agentDir]
+      });
+      if (!started.ok) {
+        nativeRuntimeToAgent.delete(opts.id);
+        nativeAgentToRuntime.delete(agentId);
+        nativeLastOutputAt.delete(opts.id);
+        nativeTerminalBuffers.delete(opts.id);
+        return { ok: false, error: started.error ?? 'Codex native runtime failed to start' };
+      }
+      analytics.track('agent_spawned', { provider, runtime: 'native' });
+      syncKeepAwake();
+      return {
+        ok: true,
+        cwd: opts.cwd,
+        runtimeMode: 'codex-native',
+        resumed: started.resumed,
+        ...(worktreePaths.get(opts.id) ? { worktreePath: worktreePaths.get(opts.id) } : {})
+      };
     }
   }
   // Long-run guardrails + tiering (Lane A #6.4/#6.6). All additive to the args
@@ -2889,22 +3017,64 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   const worktreePath = worktreePaths.get(opts.id);
   // `cwd` echoes back the TILDE-EXPANDED absolute path so the renderer's agent
   // record matches what the registry and the PTY actually used.
-  return { ...res, cwd: opts.cwd, ...(worktreePath ? { worktreePath } : {}), ...(resumeNotFound ? { resumeNotFound: true } : {}), ...(didResume ? { resumed: true } : {}), ...(seedPrompt ? { seedPrompt } : {}) };
+  return { ...res, cwd: opts.cwd, runtimeMode: 'pty', ...(worktreePath ? { worktreePath } : {}), ...(resumeNotFound ? { resumeNotFound: true } : {}), ...(didResume ? { resumed: true } : {}), ...(seedPrompt ? { seedPrompt } : {}) };
 }
-ipcMain.handle('pty:write', (_evt, id: string, data: string) => {
+ipcMain.handle('pty:write', async (_evt, id: string, data: string) => {
   if (typeof id !== 'string' || typeof data !== 'string') return { ok: false, error: 'invalid args' };
+  const nativeAgentId = nativeRuntimeToAgent.get(id);
+  if (nativeAgentId) {
+    let buffer = nativeTerminalBuffers.get(id) ?? '';
+    for (const char of data) {
+      if (char === '\u0003') {
+        nativeTerminalBuffers.set(id, buffer);
+        return nativeRuntime.interrupt(nativeAgentId);
+      }
+      if (char === '\u0015') { buffer = ''; continue; }
+      if (char === '\u007f' || char === '\b') { buffer = buffer.slice(0, -1); continue; }
+      if (char !== '\r' && char !== '\n' && char >= ' ') { buffer += char; continue; }
+      if ((char === '\r' || char === '\n') && buffer.trim()) {
+        const prompt = buffer;
+        buffer = '';
+        nativeTerminalBuffers.set(id, buffer);
+        const result = await nativeRuntime.submit(nativeAgentId, {
+          text: prompt,
+          messageId: `terminal-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`
+        });
+        if (result.ok) {
+          try { liveWebContents()?.send(`pty:data:${id}`, '\r\n[已提交到 Codex 原生回合]\r\n'); } catch { /* renderer may restart */ }
+        }
+        return result;
+      }
+    }
+    nativeTerminalBuffers.set(id, buffer.slice(-128_000));
+    return { ok: true };
+  }
   return ptyManager.write(id, data);
 });
 ipcMain.handle('pty:resize', (_evt, id: string, cols: number, rows: number) => {
   if (typeof id !== 'string' || typeof cols !== 'number' || typeof rows !== 'number') return { ok: false, error: 'invalid args' };
+  if (nativeRuntimeToAgent.has(id)) return { ok: true };
   return ptyManager.resize(id, cols, rows);
 });
 ipcMain.handle('pty:redraw', (_evt, id: string) => {
   if (typeof id !== 'string') return { ok: false, error: 'invalid id' };
+  if (nativeRuntimeToAgent.has(id)) return { ok: true };
   return ptyManager.redraw(id);
 });
-ipcMain.handle('pty:kill', (_evt, id: string) => {
+ipcMain.handle('pty:kill', async (_evt, id: string) => {
   if (typeof id !== 'string') return { ok: false, error: 'invalid id' };
+  const nativeAgentId = nativeRuntimeToAgent.get(id);
+  if (nativeAgentId) {
+    const res = await nativeRuntime.stop(nativeAgentId);
+    nativeRuntimeToAgent.delete(id);
+    nativeAgentToRuntime.delete(nativeAgentId);
+    nativeLastOutputAt.delete(id);
+    nativeTerminalBuffers.delete(id);
+    if (res.ok && hive.enabled()) hive.setArchived(nativeAgentId, true);
+    try { liveWebContents()?.send(`pty:exit:${id}`, { exitCode: res.ok ? 0 : 1 }); } catch { /* renderer may restart */ }
+    syncKeepAwake();
+    return res;
+  }
   // Kill the process, then run the shared lifecycle teardown (archive the agent,
   // remove its isolated worktree, drop the maps). teardownPty is idempotent, so
   // node-pty firing onExit once the child actually dies is a harmless no-op.
@@ -2912,20 +3082,144 @@ ipcMain.handle('pty:kill', (_evt, id: string) => {
   teardownPty(id);
   return res;
 });
-ipcMain.handle('pty:list', () => ptyManager.list());
+ipcMain.handle('pty:list', () => [
+  ...ptyManager.list(),
+  ...nativeRuntime.list().map((snapshot) => {
+    const id = nativeAgentToRuntime.get(snapshot.agentId) ?? snapshot.agentId;
+    return {
+      id,
+      cwd: snapshot.cwd,
+      command: 'codex app-server',
+      pid: 0,
+      lastOutputAt: nativeLastOutputAt.get(id) ?? snapshot.updatedAt,
+      hasOutput: true
+    };
+  })
+]);
+
+// ─── IPC: normalized native runtime ─────────────────────────────────────────
+ipcMain.handle('runtime:list', () => nativeRuntime.list());
+ipcMain.handle('runtime:snapshot', (_evt, agentId: unknown) =>
+  typeof agentId === 'string' ? nativeRuntime.snapshot(agentId) : null);
+ipcMain.handle('runtime:submit', (_evt, agentId: unknown, textValue: unknown, messageId: unknown, options: unknown) => {
+  if (typeof agentId !== 'string' || typeof textValue !== 'string' || typeof messageId !== 'string') {
+    return { ok: false, error: 'invalid native turn input' };
+  }
+  const extra = options && typeof options === 'object' && !Array.isArray(options)
+    ? options as { outputSchema?: unknown; skillName?: unknown; skillPath?: unknown }
+    : {};
+  return nativeRuntime.submit(agentId, {
+    text: textValue,
+    messageId,
+    outputSchema: extra.outputSchema,
+    skillName: typeof extra.skillName === 'string' ? extra.skillName : undefined,
+    skillPath: typeof extra.skillPath === 'string' ? extra.skillPath : undefined
+  });
+});
+ipcMain.handle('runtime:interrupt', (_evt, agentId: unknown) =>
+  typeof agentId === 'string' ? nativeRuntime.interrupt(agentId) : { ok: false, error: 'invalid agent id' });
+ipcMain.handle('runtime:compact', (_evt, agentId: unknown) =>
+  typeof agentId === 'string' ? nativeRuntime.compact(agentId) : { ok: false, error: 'invalid agent id' });
+ipcMain.handle('runtime:newThread', (_evt, agentId: unknown) =>
+  typeof agentId === 'string' ? nativeRuntime.newThread(agentId) : { ok: false, error: 'invalid agent id' });
+ipcMain.handle('runtime:threads', (_evt, agentId: unknown, limit: unknown) =>
+  typeof agentId === 'string'
+    ? nativeRuntime.threads(agentId, typeof limit === 'number' ? Math.max(1, Math.min(limit, 100)) : 24)
+    : Promise.reject(new Error('invalid agent id')));
+ipcMain.handle('runtime:readThread', (_evt, agentId: unknown, threadId: unknown) =>
+  typeof agentId === 'string' && typeof threadId === 'string'
+    ? nativeRuntime.readThread(agentId, threadId)
+    : Promise.reject(new Error('invalid thread id')));
+ipcMain.handle('runtime:forkThread', (_evt, agentId: unknown, threadId: unknown) =>
+  typeof agentId === 'string' && typeof threadId === 'string'
+    ? nativeRuntime.forkThread(agentId, threadId)
+    : Promise.reject(new Error('invalid thread id')));
+ipcMain.handle('runtime:goal', (_evt, agentId: unknown, objective: unknown) =>
+  typeof agentId === 'string' && (objective === undefined || typeof objective === 'string')
+    ? nativeRuntime.goal(agentId, objective)
+    : Promise.reject(new Error('invalid goal input')));
+ipcMain.handle('runtime:skills', (_evt, agentId: unknown) =>
+  typeof agentId === 'string' ? nativeRuntime.skills(agentId) : Promise.reject(new Error('invalid agent id')));
+ipcMain.handle('runtime:approval', (_evt, agentId: unknown, requestId: unknown, accept: unknown) =>
+  typeof agentId === 'string' && typeof requestId === 'string' && typeof accept === 'boolean'
+    ? nativeRuntime.respondApproval(agentId, requestId, accept)
+    : { ok: false, error: 'invalid approval response' });
+ipcMain.handle('runtime:fallback', async (_evt, agentId: unknown) => {
+  if (typeof agentId !== 'string') return { ok: false, error: 'invalid agent id' };
+  const runtimeId = nativeAgentToRuntime.get(agentId);
+  const meta = hive.registry().agents[agentId];
+  if (!runtimeId || !meta) return { ok: false, error: 'native agent is not available' };
+  const stopped = await nativeRuntime.stop(agentId);
+  if (!stopped.ok) return stopped;
+  nativeRuntimeToAgent.delete(runtimeId);
+  nativeAgentToRuntime.delete(agentId);
+  nativeLastOutputAt.delete(runtimeId);
+  nativeTerminalBuffers.delete(runtimeId);
+  const config = readConfig();
+  const command = defaultCommandForProvider('codex', config.defaultCommand);
+  if (!command) return { ok: false, error: 'Codex command is not configured' };
+  const model = meta.isGod ? config.godModel : config.providerDefaultModels?.codex;
+  const args = [
+    ...(config.autoMode ? autoModeFlagForProvider('codex').trim().split(/\s+/).filter(Boolean) : []),
+    ...(model ? ['--model', model] : [])
+  ];
+  return spawnAgentCore({
+    id: runtimeId,
+    cwd: meta.cwd,
+    command,
+    args,
+    provider: 'codex',
+    runtimeMode: 'pty',
+    resume: true,
+    hive: meta
+  }, liveWebContents());
+});
 
 // Resolve a pasted Claude session id to the cwd it originally ran in, so the Add
 // Agent dialog can auto-fill the folder for a resume (#2 zero-step resume). Reads
 // the cwd from a transcript record; null when the id is invalid/unknown.
 ipcMain.handle('session:resolveCwd', (_evt, sessionId: unknown) =>
   (typeof sessionId === 'string' ? resolveSessionCwd(sessionId) : null));
-ipcMain.handle('session:listRecent', (_evt, limit: unknown) => {
+ipcMain.handle('session:listRecent', async (_evt, limit: unknown) => {
+  const boundedLimit = typeof limit === 'number' ? Math.max(1, Math.min(limit, 100)) : 24;
   const rows = listRecentSessions({
     harnessHome: readConfig().harnessHome ?? undefined,
     agents: hive.registry().agents,
-    limit: typeof limit === 'number' ? limit : 24
+    limit: boundedLimit
   });
-  return rows.map((row) => row.cwd === null ? { ...row, cwd: undefined } : row);
+  const nativeRows: typeof rows = [];
+  await Promise.all(nativeRuntime.list().map(async (snapshot) => {
+    try {
+      const response = await nativeRuntime.threads(snapshot.agentId, boundedLimit) as { data?: unknown };
+      const data = Array.isArray(response?.data) ? response.data : [];
+      const meta = hive.registry().agents[snapshot.agentId];
+      for (const candidate of data) {
+        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
+        const thread = candidate as Record<string, unknown>;
+        if (typeof thread.id !== 'string') continue;
+        nativeRows.push({
+          id: thread.id,
+          provider: 'codex',
+          agentId: snapshot.agentId,
+          agentName: meta?.name ?? snapshot.agentId,
+          cwd: typeof thread.cwd === 'string' ? thread.cwd : snapshot.cwd,
+          updatedAt: typeof thread.updatedAt === 'number' ? thread.updatedAt * 1_000 : snapshot.updatedAt,
+          source: 'codex-native',
+          resumable: true
+        });
+      }
+    } catch { /* an offline native runtime falls back to the bounded local catalog */ }
+  }));
+  const deduped = new Map<string, (typeof rows)[number]>();
+  for (const row of [...rows, ...nativeRows]) {
+    const key = `${row.provider}:${row.id}`;
+    const prior = deduped.get(key);
+    if (!prior || row.source === 'codex-native' || row.updatedAt > prior.updatedAt) deduped.set(key, row);
+  }
+  return [...deduped.values()]
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, boundedLimit)
+    .map((row) => row.cwd === null ? { ...row, cwd: undefined } : row);
 });
 
 // ─── IPC: clipboard ─────────────────────────────────────────────────────────
@@ -3685,7 +3979,7 @@ function teardownAndQuit(): void {
   try { persist.close(); } catch (e) { console.error('[quit] persist.close:', e); }
   try { hive.stopAllProxyBridges(); } catch (e) { console.error('[quit] stopAllProxyBridges:', e); }
   try { ptyManager.killAll(); } catch (e) { console.error('[quit] killAll:', e); }
-  app.quit();
+  void nativeRuntime.stopAll().finally(() => app.quit());
 }
 ipcMain.handle('app:confirmClose', () => {
   closingTime.cancel(); // a hard quit overrides a closing time in progress
@@ -3712,7 +4006,7 @@ const closingTime = new ClosingTimeController(
   // Roster source: agents with a live PTY right now (ptyToAgent is pruned on
   // every teardown). The registry alone would include ghost workers from
   // sessions that ended with a hard quit — never archived, never able to ACK.
-  () => [...new Set(ptyToAgent.values())],
+  () => [...new Set([...ptyToAgent.values(), ...nativeRuntimeToAgent.values()])],
   () => liveWebContents(),
   () => teardownAndQuit(),
   // #7C.2 steering — the graceful interrupt that reaches deeply busy agents
@@ -3724,7 +4018,7 @@ ipcMain.handle('app:startClosingTime', () => closingTime.start());
 ipcMain.handle('app:cancelClosingTime', () => closingTime.cancel());
 
 // ─── IPC: full reset (wipe data + config, relaunch into onboarding) ──────────
-ipcMain.handle('app:resetAll', () => {
+ipcMain.handle('app:resetAll', async () => {
   allowQuit = true;
   // Tear everything down first so nothing writes back into the dirs we wipe.
   try { clearMissionTimers(); } catch (e) { console.error('[reset] clearMissionTimers:', e); }
@@ -3740,6 +4034,7 @@ ipcMain.handle('app:resetAll', () => {
   try { reflector.stop(); } catch (e) { console.error('[reset] reflector.stop:', e); }
   try { persist.close(); } catch (e) { console.error('[reset] persist.close:', e); }
   try { ptyManager.killAll(); } catch (e) { console.error('[reset] killAll:', e); }
+  try { await nativeRuntime.stopAll(); } catch (e) { console.error('[reset] stopAllNative:', e); }
   // Erase the hive (Michael's + every agent's memory, inboxes, tasks, board,
   // git history) and the semantic-memory palace. Only these harness-created
   // subdirs are removed — never the user's whole harnessHome folder.
@@ -4967,6 +5262,10 @@ function onSystemResume(reason: string): void {
     if (drained > 0) console.log(`[power] ${reason} — flushed ${drained} queued hive message(s)`);
   } catch (e) { console.error('[power] router re-arm on resume', e); }
   try { syncKeepAwake(); } catch (e) { console.error('[power] syncKeepAwake on resume', e); }
+  void nativeRuntime.resumeAfterWake().then((summary) => {
+    console.log(`[power] ${reason} — native runtimes checked=${summary.checked} recovered=${summary.recovered} failed=${summary.failed}`);
+    try { liveWebContents()?.send('runtime:wakeChecked', { reason, ...summary }); } catch { /* window gone */ }
+  }).catch((error) => console.error('[power] native runtime wake check', error));
   const awayMs = lastSuspendAt != null ? Date.now() - lastSuspendAt : null;
   // Give PTYs a beat to resume their pipes before judging them wedged; reset any
   // pending check so a resume quickly followed by unlock runs the probe just once.
@@ -5057,7 +5356,7 @@ app.whenReady().then(() => {
 // the red close button. Both routes hit the same warning UX.
 app.on('before-quit', (e) => {
   if (allowQuit) return;
-  const count = ptyManager.list().length;
+  const count = ptyManager.list().length + nativeRuntime.list().length;
   if (count === 0) return;
   e.preventDefault();
   if (mainWindow) {
@@ -5069,7 +5368,7 @@ app.on('before-quit', (e) => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     ptyManager.killAll();
-    app.quit();
+    void nativeRuntime.stopAll().finally(() => app.quit());
   }
 });
 
@@ -5084,7 +5383,7 @@ app.on('will-quit', (e) => {
   e.preventDefault();
   const finish = (): void => app.quit();
   Promise.race([
-    analytics.endSession(),
+    Promise.all([analytics.endSession(), nativeRuntime.stopAll()]).then(() => undefined),
     new Promise<void>((r) => setTimeout(r, 1200))
   ]).then(finish, finish);
 });

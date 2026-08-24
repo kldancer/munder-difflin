@@ -10,10 +10,11 @@ const loadTs = require('./load-ts.cjs');
 const {
   allocatePlan,
   buildStartFromConclusionPrompt,
+  buildTeamOsPlanOutputSchema,
   formatTeamOsSpawnCommand,
   validatePlanManifest
 } = loadTs('src/main/teamOsPlan.ts');
-const { TeamOsPlanCoordinator, listPlanningStates, startFromConclusion } = loadTs('src/main/teamOsPlanning.ts');
+const { TeamOsPlanCoordinator, listPlanningStates, startFromConclusion, submitPlanningResult } = loadTs('src/main/teamOsPlanning.ts');
 
 const projectRoot = '/tmp/team-os-project';
 const serviceRoot = '/tmp/team-os-service';
@@ -144,6 +145,13 @@ test('start prompt keeps Michael in the same session and names the bounded submi
   assert.match(prompt, /系统将负责校验、创建卡片、复用\/创建 Agent、Session、PTY/);
 });
 
+test('native planning uses a bounded output schema without granting authority', () => {
+  const schema = buildTeamOsPlanOutputSchema({ requestId: 'plan-1', projectId: 'sample', localWrite: true });
+  assert.deepEqual(schema.properties.requestId.enum, ['plan-1']);
+  assert.deepEqual(schema.properties.authorization.properties.gitWrite.enum, [false]);
+  assert.equal(schema.properties.tasks.maxItems, 12);
+});
+
 test('persists the exact Team OS executable and argv recipe for restart', () => {
   assert.equal(
     formatTeamOsSpawnCommand('codex', [
@@ -199,10 +207,12 @@ test('durable coordinator turns Michael submission into a real task dispatch and
   const options = { configuredHome: fx.teamOsHome };
   const started = startFromConclusion({ options, harnessHome: fx.harnessHome, projectId: 'sample', localWrite: true, now: 0 });
   assert.equal(started.ok, true);
+  assert.match(started.nativePrompt, /不要自行写 submit\.json/);
+  assert.deepEqual(started.outputSchema.properties.requestId.enum, [started.requestId]);
   const requestDir = path.join(fx.harnessHome, '.work/team-os/plans', started.requestId);
   const submitted = manifest([task('implement')]);
   submitted.requestId = started.requestId;
-  writeFile(path.join(requestDir, 'submit.json'), JSON.stringify(submitted));
+  assert.deepEqual(submitPlanningResult({ harnessHome: fx.harnessHome, requestId: started.requestId, value: JSON.stringify(submitted) }), { ok: true });
 
   const agents = { god: { id: 'god', name: 'Michael', role: 'chief-of-staff', cwd: fx.root, status: 'idle', provider: 'codex', isGod: true } };
   const ledger = [];

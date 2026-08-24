@@ -22,6 +22,12 @@ import type {
   TeamOsWorkOrderRequest
 } from '../main/teamOs';
 import type { StartFromConclusionResult, TeamOsPlanningState } from '../main/teamOsPlanning';
+import type {
+  AgentRuntimeMode,
+  RuntimeApprovalRequest,
+  RuntimeEvent,
+  RuntimeSessionSnapshot
+} from '../shared/agentRuntime';
 export type {
   TeamOsCompiledWorkOrder,
   TeamOsCompileFailure,
@@ -128,7 +134,7 @@ export interface RecentSession {
   agentName: string | null;
   cwd: string | null;
   updatedAt: number;
-  source: 'registry' | 'claude' | 'codex' | 'gemini' | 'deepseek';
+  source: 'registry' | 'claude' | 'codex' | 'codex-native' | 'gemini' | 'deepseek';
   resumable: boolean;
   limitation?: string;
 }
@@ -253,6 +259,9 @@ export interface SpawnPtyOptions {
    *  main process seeds that session's `.jsonl` into the target cwd's project dir
    *  (copying it from wherever it lives) and launches `claude --resume <id>`. */
   resumeSessionId?: string;
+  /** Force this Codex spawn onto native or compatibility mode. Other providers
+   *  always use PTY regardless of this hint. */
+  runtimeMode?: AgentRuntimeMode;
 }
 
 export interface PtyExit { exitCode: number; signal?: number | undefined }
@@ -300,6 +309,7 @@ export interface HarnessConfig {
   recentHives?: string[];
   registeredRepos: string[];
   autoMode: boolean;
+  codexNativeRuntime?: 'off' | 'michael' | 'all';
   defaultCommand: string;
   defaultModel?: string;
   /** Which provider+model powers the GOD orchestrator ("Michael"). Default
@@ -641,7 +651,7 @@ const api = {
   // ─── PTY ─────────────────────────────────────────────────────────────────
   /** `cwd` in the result is the TILDE-EXPANDED absolute path main actually spawned
    *  into — the renderer stores that, not the raw `~/…` the user typed. */
-  spawnPty: (opts: SpawnPtyOptions): Promise<{ ok: boolean; error?: string; cwd?: string; worktreePath?: string; resumeNotFound?: boolean; resumed?: boolean; seedPrompt?: string }> =>
+  spawnPty: (opts: SpawnPtyOptions): Promise<{ ok: boolean; error?: string; cwd?: string; worktreePath?: string; resumeNotFound?: boolean; resumed?: boolean; seedPrompt?: string; runtimeMode?: AgentRuntimeMode }> =>
     ipcRenderer.invoke('pty:spawn', opts),
   writePty: (id: string, data: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('pty:write', id, data),
@@ -686,6 +696,42 @@ const api = {
     const listener = () => cb();
     ipcRenderer.on(channel, listener);
     return () => ipcRenderer.removeListener(channel, listener);
+  },
+  // ─── Native Provider Runtime ─────────────────────────────────────────────
+  runtimeList: (): Promise<RuntimeSessionSnapshot[]> => ipcRenderer.invoke('runtime:list'),
+  runtimeSnapshot: (agentId: string): Promise<RuntimeSessionSnapshot | null> =>
+    ipcRenderer.invoke('runtime:snapshot', agentId),
+  runtimeSubmit: (agentId: string, text: string, messageId: string, options?: { outputSchema?: unknown; skillName?: string; skillPath?: string }): Promise<{ ok: boolean; error?: string; duplicate?: boolean; steered?: boolean; turnId?: string }> =>
+    ipcRenderer.invoke('runtime:submit', agentId, text, messageId, options),
+  runtimeInterrupt: (agentId: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('runtime:interrupt', agentId),
+  runtimeCompact: (agentId: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('runtime:compact', agentId),
+  runtimeNewThread: (agentId: string): Promise<{ ok: boolean; error?: string; snapshot?: RuntimeSessionSnapshot }> =>
+    ipcRenderer.invoke('runtime:newThread', agentId),
+  runtimeThreads: (agentId: string, limit = 24): Promise<unknown> =>
+    ipcRenderer.invoke('runtime:threads', agentId, limit),
+  runtimeReadThread: (agentId: string, threadId: string): Promise<unknown> =>
+    ipcRenderer.invoke('runtime:readThread', agentId, threadId),
+  runtimeForkThread: (agentId: string, threadId: string): Promise<unknown> =>
+    ipcRenderer.invoke('runtime:forkThread', agentId, threadId),
+  runtimeGoal: (agentId: string, objective?: string): Promise<unknown> =>
+    ipcRenderer.invoke('runtime:goal', agentId, objective),
+  runtimeSkills: (agentId: string): Promise<unknown> =>
+    ipcRenderer.invoke('runtime:skills', agentId),
+  runtimeApproval: (agentId: string, requestId: string, accept: boolean): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('runtime:approval', agentId, requestId, accept),
+  runtimeFallback: (agentId: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('runtime:fallback', agentId),
+  onRuntimeEvent: (cb: (payload: { agentId: string; event: RuntimeEvent }) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, payload: { agentId: string; event: RuntimeEvent }) => cb(payload);
+    ipcRenderer.on('runtime:event', listener);
+    return () => ipcRenderer.removeListener('runtime:event', listener);
+  },
+  onRuntimeApproval: (cb: (payload: { agentId: string; request: RuntimeApprovalRequest }) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, payload: { agentId: string; request: RuntimeApprovalRequest }) => cb(payload);
+    ipcRenderer.on('runtime:approvalRequested', listener);
+    return () => ipcRenderer.removeListener('runtime:approvalRequested', listener);
   },
 
   // ─── Dialog ──────────────────────────────────────────────────────────────
@@ -971,7 +1017,7 @@ const api = {
   onHiveAgentSpawned: (
     cb: (rec: {
       id: string; name: string; provider?: string; cwd: string;
-      command?: string; model?: string; role?: string; worktreePath?: string;
+      command?: string; model?: string; role?: string; worktreePath?: string; runtimeMode?: AgentRuntimeMode;
     }) => void
   ): (() => void) => {
     const listener = (_e: IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);

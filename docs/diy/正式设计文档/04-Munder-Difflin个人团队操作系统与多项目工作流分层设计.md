@@ -8,7 +8,7 @@
 
 当前个人实例路径是 `/Users/kailonyang/Munder-Difflin/team-os`。Munder 已将它实现为可配置的 `teamOsHome`，并保留环境变量与用户目录默认约定，产品逻辑不硬编码个人绝对路径。
 
-本设计不建立第二套任务调度器，不复制 Provider Agent Loop，不把所有项目统一成相同流程，也不要求每次任务启动全部专家。Munder 仍负责可视化、角色、PTY、消息与运行控制；Team OS 只提供可版本化的稳定组织合同。
+本设计不建立第二套任务调度器，不复制 Provider Agent Loop，不把所有项目统一成相同流程，也不要求每次任务启动全部专家。Munder 仍负责可视化、角色、Provider Runtime、消息与运行控制；Team OS 只提供可版本化的稳定组织合同。
 
 ## 2. 四层权威
 
@@ -27,7 +27,7 @@ flowchart TB
     Adapter{{"🗂️ 项目适配器\n只登记路径与能力"}}
     Project[("🏗️ 项目权威仓库\n设计 · Gate · 生产事实")]
     Office[("🗄️ 运行态办公室\nSession · 信箱 · 记忆")]
-    Agents["🧑‍💻 专家工位\n独立 CLI + PTY"]
+    Agents["🧑‍💻 专家工位\n独立 Provider Runtime + Thread/Session"]
     Result["📦 可验收成果\n实现 + 证据 + 决策"]
 
     User <--> Munder
@@ -92,16 +92,16 @@ Team OS 只保存稳定、可审查、可跨项目复用的内容。一次任务
 
 启动一个项目任务时，Munder 按以下顺序编译最小上下文，而不是把所有文档塞给每个 Agent：
 
-1. 有界加载 Team OS 角色/能力目录和结果卡模板；
-2. 通过适配器定位项目 `AGENTS.md` 与适用项目路由，只把路径引用而非项目正文编入工作单；
-3. 用户显式选择一个结果负责人角色和必要能力增量，填写业务结果、非目标、验收、预算和停止条件；
-4. Main Process 编译一张无持久化、可预览的结果卡式工作单，默认不授予本地写，远端、生产、破坏性和 Git 写始终保持关闭；
-5. 只有用户显式打开“项目内本地写”时，工作单才记录本次本地写授权；该字段不绕过 Provider 原生工具审批或项目 Gate；
-6. 用户确认预览后只把工作单填入 Michael 现有分派框，仍需再次显式发送；Michael 和执行 Agent 再根据目标与 changed paths 按需读取机器计划、正式设计或领域 Skill；
-7. 运行过程中传递结构化交接与证据引用，不复制完整 Transcript；
+1. 用户先在 Michael 当前 Thread/Session 中讨论想法、取舍与结论；普通讨论不创建计划或员工。
+2. 用户精确发送或点击“按结论开始推进”后，Main 有界加载 Team OS 项目/角色/能力索引，并把项目权威路径、紧凑 workspace 索引和固定关闭的高风险授权交给同一 Michael。
+3. Michael 自己按需读取项目 `AGENTS.md`、实施规范、正式设计、机器计划与必要 Skill，形成 outcome、non-goals、验收、DAG、写集合、预算和停止条件。
+4. Codex native 在同一 Thread 新开带 `outputSchema` 的 planning Turn；PTY compatibility 可使用有界文件提交。Main 不读取 Transcript 重新推理，也不启动第二个规划模型。
+5. PlanCoordinator 确定性校验 schema、项目/workspace、角色/能力、DAG、并发、写冲突与授权；校验失败返回同一 Michael 修正。
+6. 合法计划原子写入办公室 `.work/team-os/plans/` 与 Hive tasks/inbox，再按需复用或创建真实员工 Runtime；简单工作保持单 owner。
+7. 员工根据目标与 changed paths 按需读取项目权威和 Skill，运行中只传结构化交接与证据引用，不复制完整 Transcript。
 8. 结束后仅把经确认的稳定经验提炼到角色记忆或权威文档。
 
-同一 Agent 的 CLI Session 可以保留对话连续性，Team OS 角色合同则提供跨 Session 的稳定职责；两者一短一长、一个由 Provider 拥有、一个由用户版本控制，不构成重复存储。
+旧的结果卡/“准备工作”编译只作为高级预览和 PTY 兼容入口保留，不是日常前置步骤。同一 Agent 的 Thread/Session 保留对话连续性，Team OS 角色合同提供跨 Session 的稳定职责；两者一短一长、一个由 Provider 拥有、一个由用户版本控制，不构成重复存储。
 
 ### 6.1 上下文与空闲值守效率合同
 
@@ -109,7 +109,7 @@ Munder 不通过反复粘贴完整制度来维持角色。每个 Agent 的常驻
 
 | 入口 | 注入条件 | 不进入上下文的噪声 |
 | --- | --- | --- |
-| 稳定 bootstrap | 新建或恢复 CLI Session | 实时 token、费用、任务快照、完整规范正文 |
+| 稳定角色内核 | Codex 每 Agent `CODEX_HOME/AGENTS.md`；PTY Provider 新建/恢复 Session | 实时 token、费用、任务快照、完整规范正文 |
 | `LIVE ROSTER` | Michael 的 `SessionStart`；此后仅成员、角色、状态、真实收件箱或熔断事实发生语义变化 | 时间戳、最近活动秒数、最近工具、token 与费用波动 |
 | 每小时值守 | Main Process 先检查任务、成员、真实收件箱和熔断器；只有在办事项、风险或一次性语义变化时才唤醒 Michael | 安静且未变化时不发 Hive 消息、不调用模型、不追加 `memory.md` |
 
@@ -129,7 +129,7 @@ Team OS 不纳入 Harness 快照工具的默认输入，因为它不是 `harness
 
 ## 8. 科学协作与模型组合
 
-TOS0.5 在运行集成前先固定组织行为，避免把“更多 Agent、更多角色、更多模型”误当成团队价值。默认拓扑是单一结果负责人；只有不同事实源、专业互补、高风险独立验证，或写集合互斥且能单独验收的工作能够覆盖协调成本时，才组建临时团队。
+科学协作合同避免把“更多 Agent、更多角色、更多模型”误当成团队价值。默认拓扑是单一结果负责人；只有不同事实源、专业互补、高风险独立验证，或写集合互斥且能单独验收的工作能够覆盖协调成本时，才组建临时团队。
 
 可选拓扑只有五种：顺序与工具密集任务使用 `solo`；多事实源探索使用首轮互不可见的 `independent-evidence`；跨专业但实现耦合时使用 `owner-specialists`；高风险变更使用 `single-writer-verifier`；重复且写集合互斥时使用 `batch-parallel`。不建设永久辩论群、固定全员会议或无终点的 Agent 互评。
 
@@ -140,7 +140,7 @@ TOS0.5 在运行集成前先固定组织行为，避免把“更多 Agent、更�
 | 组织角色 | 结果、权限、写入与完成责任 | `delivery-engineer` 是默认端到端 Feature Owner |
 | 能力画像 | 专业知识、工具、事实入口和验收方法 | 识别到能力缺口时叠加；不自动获得结果所有权 |
 | 人物形象 | Munder 中长期可识别的姓名、外观和默认能力权重 | 可以叫“前端工程师”或“UI 设计师”，但名称不触发强制路由或授权 |
-| Agent 实例 | 当前 Provider、Session、PTY、目录和任务状态 | 按结果卡临时创建或复用，不拥有长期制度 |
+| Agent 实例 | 当前 Provider、Runtime、Thread/Session、目录和任务状态 | 按结果卡临时创建或复用，不拥有长期制度 |
 
 UI/UX 负责用户流程、信息架构、交互/错误状态和视觉验收；前端工程负责组件、客户端状态、API 集成、可访问性、性能和浏览器事实。小任务允许同一 Agent 顺序承担两种能力；只有专业事实或工具不同，并同时存在独立验收、可分写集合、风险保护或长期高频需求时，才实例化专职 Agent。后端、数据、安全与运行能力采用同一门槛。项目目录名或空闲 Agent 数量不能单独成为拆分理由。
 
@@ -158,53 +158,52 @@ UI/UX 负责用户流程、信息架构、交互/错误状态和视觉验收；�
 
 当前候选顺序是：保留 Gemini 作为多模态/超长材料侦察通道，保留 DeepSeek 作为独立推理审查与低成本批处理通道；新增试点优先评估 Grok 4.6 的时效研究、开放网络挑战与引用能力，其次评估 Kimi K3 的中文知识工作、长文档与多模态办公能力；Qwen3-Coder-Plus 仅在中文代码、阿里生态或本地私有模型需求出现时再评估。Claude 按用户决策排除。候选、已集成和黄金主链是三个不同状态，不得混写。
 
-TOS1 的 loader 只读取和校验上述合同，不自动选人、自动换模型或静默降级。自动路由与自动选模不设定独立 TOS4 前置 Wave；只有长期真实使用中形成明确价值和运行需求时才按独立功能设计。当前模型和角色选择始终由负责人显式决定并可追踪。
+Team OS loader 只读取和校验上述合同，不自动选人、自动换模型或静默降级。自动路由与自动选模只有在长期真实使用中形成明确价值和运行需求时才按独立功能设计；模型和角色选择始终由负责人显式决定并可追踪。
 
 运行时按 `config.teamOsHome`、`MUNDER_TEAM_OS_HOME`、`~/Munder-Difflin/team-os` 的优先级解析 Team OS 根目录。Main Process 只读取固定的 `projects/registry.json` 与注册适配器，单文件上限 256 KiB、项目上限 100、每项目引用上限 32；适配器与引用均执行根目录约束和真实路径校验，拒绝绝对引用、`..` 逃逸、文件符号链接和解析后越界。返回值只包含路径、存在性、类型、布尔约束和错误状态，不返回权威正文、Prompt、Transcript、任务或秘密。
 
-TOS2 复用 Michael 的现有 Command Center，新增“项目与权威合同”标签；设置页只增加独立的 Team OS 目录选择，不建立第二个首页、项目管理器或任务数据库。总览展示项目状态、根目录、适配器、权威/机器/证据引用及约束；活动阶段只读取 PlanCoordinator 的持久状态，不从 Hive 文本、终端输出或文件时间猜测。Team OS 缺失、注册表无效或单个适配器失败均显式显示，终端、Agent 与 Hive 不依赖该读取成功。
+Command Center 使用“项目与权威合同”标签呈现 Team OS；设置页只提供独立目录选择，不建立第二个首页、项目管理器或任务数据库。总览展示项目状态、根目录、适配器、权威/机器/证据引用及约束；活动阶段只读取 PlanCoordinator 的持久状态，不从 Hive 文本、终端输出或文件时间猜测。Team OS 缺失、注册表无效或单个适配器失败均显式显示，终端、Agent 与 Hive 不依赖该读取成功。
 
-TOS2.5 在 Team OS `projects/ownership/` 记录 `retain`、`extracted`、`dedupeAfter` 三类归属。TOS3 已完成项目权威引用与工作单编译后，可前向删除项目中已由 Team OS 承接的说明性重复；项目安全底线、机器入口、现行 Skill 执行入口和 Provider/生产约束仍由项目拥有。
+Team OS 在 `projects/ownership/` 记录 `retain`、`extracted`、`dedupeAfter` 三类归属。只有项目权威引用与工作单编译合同已经成立，才可前向删除项目中由 Team OS 承接的说明性重复；项目安全底线、机器入口、现行 Skill 执行入口和 Provider/生产约束始终由项目拥有。
 
-TOS3 的空白“准备工作”表单不再是默认入口，其编译接口只作为兼容和高级检查能力保留。正常主链由用户在同一个 Michael Session 中讨论；精确发送或点击“按结论开始推进”后，Main Process 建立有界规划请求，并把项目权威引用、紧凑 workspace 索引和提交协议排入 Michael 当前队列。项目文档正文仍由 Michael 按需读取，不由 Renderer 复制。
+空白“准备工作”表单不是默认入口，其编译接口只作为兼容和高级检查能力保留。正常主链由用户在同一个 Michael Thread/Session 中讨论；精确发送或点击“按结论开始推进”后，Main Process 建立有界规划请求，并把项目权威引用、紧凑 workspace 索引和提交协议排入 Michael 当前队列。项目文档正文仍由 Michael 按需读取，不由 Renderer 复制。
 
-TOS4 增加确定性 PlanCoordinator，但不建立第二个模型循环或任务数据库。Michael 在原 Session 中提交 `Plan Manifest`；Coordinator 校验 schema、项目/workspace、角色/能力、DAG、并发宽度、写集合和授权，随后复用现有 Hive task、inbox、Agent spawn、PTY 和 Provider Session 原语执行。串行同计划任务继续使用同一实例/Session；空闲角色实例被无关计划复用时保留工牌、信箱和长期记忆，但重启为新 CLI Session；真正并行的同角色 Lane 获得不同实例、PTY 和 Session。`cwd` 只是上下文锚点，跨目录读写仍由计划 scope 与本机权限共同约束。
+确定性 PlanCoordinator 不建立第二个模型循环或任务数据库。Codex native 的 Michael 在原 Thread 中通过 `outputSchema` 返回 `Plan Manifest`；Coordinator 校验 schema、项目/workspace、角色/能力、DAG、并发宽度、写集合和授权，随后复用现有 Hive task、inbox、Agent spawn 与 Provider Runtime 原语执行。串行同计划任务继续使用同一实例/Thread/Session；空闲角色实例被无关计划复用时保留工牌、信箱和长期记忆，但切换新 Thread/Session；真正并行的同角色 Lane 获得不同实例和活动 Thread/Session。Codex native 的 `cwd` 是上下文锚点，精确 `writableRoots` 与审批约束实际写入；PTY Provider 继续服从计划 scope 与本机权限。
 
-Codex 主链默认由 `gpt-5.6-sol` Michael 负责讨论、方案判断、DAG 和综合，自动创建的普通工作者默认使用 `gpt-5.6-luna`。Main Process 必须把 CLI 可执行文件、自动模式参数和模型参数作为独立 argv 传入 PTY，并把 Provider、命令和模型随角色卡持久化；不得把带空格的整段命令误当作可执行文件，也不得在应用恢复时静默退回 CLI 默认模型。
+Codex 主链默认由 `gpt-5.6-sol` Michael 负责讨论、方案判断、DAG 和综合，自动创建的普通工作者默认使用 `gpt-5.6-luna`。Main Process 在 Codex native 中把模型作为 Thread/Turn 结构化参数，在 PTY compatibility 中继续使用独立 argv；Provider、命令和模型随角色卡持久化，不得在恢复时静默退回 CLI 默认模型。
 
 规划状态持久化在当前 `harnessHome/.work/team-os/plans/<requestId>/`，只保存请求、合法计划、任务分配和阶段，不保存 Transcript、Key 或权威正文。项目页默认展示工作区搜索和规划/执行/验证/等待用户/完成阶段；Git、远端、生产、破坏性和数据删除始终为 false，不能由“开始推进”隐式放行。
 
-## 9. 分阶段实施
+## 9. 合同组成与维护映射
 
-| 阶段 | 目标 | 完成标志 |
+| 合同域 | 当前职责 | 必须持续成立 |
 | --- | --- | --- |
-| TOS0 | 正式设计、最小目录、通用短内核、首个项目只读适配器 | 结构可解析；无权威文档复制；不含秘密 |
-| TOS0.5 | 科学协作模型、软件交付组织、自适应拓扑、能力目录、模型准入与评测合同 | 默认单 Agent；端到端 owner、专业能力缺口、组队理由、单写责任、停止条件和模型 Gate 可审计 |
-| TOS1 | 在 Main Process 增加有界只读 loader 与 schema 校验 | 缺失、越界、无效适配器可解释失败；不影响终端基础能力 |
-| TOS2 | 在现有 Command Center 增加项目总览 | 只显示项目、适用规则、机器/证据引用、约束与校验状态；不另造任务系统或虚构活动结果 |
-| TOS2.5 | 固化首个项目的权威归属与去重 Gate | 项目机器与生产合同留守；通用说明性重复在 TOS3 后前向删除 |
-| TOS3 | 显式结果卡工作单、角色增量与按需 Prompt 编译 | 先预览后填入 Michael 现有分派框；无自动发送、自动路由、正文复制或隐式写授权 |
-| TOS4 | 对话式开始意图、Workspace Resolver、Plan Manifest 与确定性协调 | 同 Michael Session 形成计划；自动复用/创建真实实例并持久展示 Gate 阶段；高风险权限保持关闭 |
+| 组织内核 | 正式设计、最小目录、通用短内核、科学协作模型、角色和能力目录 | 默认单 Agent；端到端 owner、专业能力缺口、组队理由、单写责任、停止条件和模型 Gate 可审计 |
+| 有界加载 | Main Process 只读加载 Team OS 与项目适配器并校验 schema | 缺失、越界和无效适配器可解释失败；不影响终端基础能力 |
+| 可视化投影 | Command Center 展示项目、规则、机器/证据引用、约束和活动阶段 | 不另造任务系统，不从文本或时间戳虚构活动结果 |
+| 权威归属 | `projects/ownership/` 维护 `retain`、`extracted`、`dedupeAfter` | 项目机器与生产合同留守；只有权威引用与工作单合同成立后才去重 |
+| 兼容结果卡 | 提供显式结果卡、角色增量与按需 Prompt 编译 | 只作高级预览和 PTY 兼容；无自动发送、正文复制或隐式写授权 |
+| 对话式协调 | 同 Michael Thread 讨论，`outputSchema` 形成 Plan Manifest，PlanCoordinator 确定性校验与派工 | 自动复用或创建真实实例并持久展示阶段；高风险权限保持关闭 |
 
-TOS0 与 TOS0.5 是运行集成前的合同切片；TOS1～TOS4 已完成有界读取、可视化投影、权威收敛、Workspace 发现和对话式确定性协调合同。质量、效率、Token 和协作成本继续在长期使用中观察与删减。当前 Munder 不替 Michael 做产品判断或读取完整 Transcript；模型目录存在也不代表候选模型已晋升运行主链。
+质量、效率、Token 和协作成本在长期使用中持续观察与删减。Munder 不替 Michael 做产品判断或读取完整 Transcript；模型目录存在也不代表候选模型已经进入运行主链。
 
 ## 10. 最小验收合同
 
-- 两个不同项目可以登记不同权威入口，不需要复制项目文档；当前自动化夹具已覆盖多项目隔离，真实目录已验证首个聚算项目。
+- 两个不同项目可以登记不同权威入口，不需要复制项目文档；自动化夹具必须覆盖多项目隔离。
 - `office/` 与 `office-dev/` 可以顺序读取同一 Team OS，但不会共享 Session 或并发写办公室。
 - Team OS 缺失时，项目仍可按本地 `AGENTS.md` 工作；Munder 应提示降级原因而不是阻断基础终端。
 - 项目适配器越界、语法无效或指向不存在的必需入口时显式失败，不进行猜测性回退。
 - 角色上下文按目标加载，未命中的角色、Skill、设计和历史不进入 Prompt。
 - 工作单预览必须显示字节数与来源数；填入 Michael 分派框不等于发送，用户仍保有最终分派动作。
-- 本地写授权默认关闭且只能显式开启；远端、生产、破坏性和 Git 写不能由 TOS3 工作单开启。
+- 本地写授权默认关闭且只能显式开启；远端、生产、破坏性和 Git 写不能由兼容结果卡开启。
 - 默认使用单 Agent；组队时结果卡必须能说明互补证据、风险保护或可分解工作的哪一项收益覆盖协调成本。
 - 软件功能默认只有一个端到端 Feature Owner；前端、后端、UI/UX 等能力只有在缺口和实例化门槛成立时才创建专职 Agent，人物名称不得代替判断。
 - 多 Agent 写任务仍只有一个结果负责人；高风险候选冻结后由独立验证者按验收合同检查，不以“另一个模型同意”代替证据。
 - 新模型未通过运行与治理 Gate 时不能成为 Michael、单写者或生产负责人；任何不可用或降级都必须显式呈现，不静默切换。
 - 适配器、日志、收据、截图和文档均不包含 API Key、Token、Provider 认证内容或真实 Session ID。
 
-## 11. 当前实现状态与维护
+## 11. 演进与维护边界
 
-当前已完成四层权威、TOS0 文件合同、TOS0.5 科学协作/模型准入合同、TOS1 有界只读 loader、TOS2 Command Center 项目总览、TOS2.5 聚算项目归属审计、TOS3 显式结果卡兼容编译，以及 TOS4 对话式主链。真实目录可加载 7 个组织角色、9 个能力画像和聚算项目的有界 workspace 索引；用户在同一 Michael Session 中讨论后点击“按结论开始推进”，系统会持久化规划请求、校验 Plan Manifest、写入 Hive 任务并复用或创建真实 Agent/PTY/Session。稳定 bootstrap、语义变化名册注入和每小时零模型预检已按 6.1 落地。基础 Agent、终端和 Hive 不依赖 Team OS 读取成功；远端、生产、破坏性与 Git 写不会被开始意图隐式放行。自动选模仍未实现，候选模型也未晋升为新的黄金主链。后续只在真实长期使用中出现明确价值或问题时调整通用合同；命令输出与一次性收据写入 `.work/`，不得把候选能力当成已交付事实。
+基础 Agent、终端和 Hive 不依赖 Team OS 读取成功；远端、生产、破坏性与 Git 写不会被“按结论开始推进”隐式放行。自动选模不属于当前运行合同，候选模型也不能因出现在目录中就进入主链。只有真实长期使用出现可重复的价值或问题时才调整通用合同；命令输出、测试结果和一次性收据进入 `.work/`，不得写回正式设计充当永久事实。
 
 通用制度从真实工作中的重复摩擦和有效改进产生，由用户明确决定是否晋升 Team OS；项目特有的机器、领域和生产合同始终留在项目。长期观察用于继续纠偏和删减，不把短期对照实验或项目数量设为前置门槛，也不把一次成功直接扩写成永久规则。

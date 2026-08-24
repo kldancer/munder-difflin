@@ -7,6 +7,12 @@ import type { AgentProvider } from '@shared/agentProvider';
 import type { HireManifest } from '@shared/hire';
 import { DEFAULT_ORG_TRIGGER, type OrgTriggerConfig, type WebhookTrigger } from '@shared/triggers';
 import { isCompactionCommand } from '@shared/providerAutomation';
+import type {
+  AgentRuntimeMode,
+  AgentRuntimeStatus,
+  RuntimeApprovalRequest,
+  RuntimeUsage
+} from '@shared/agentRuntime';
 
 export type ToolKind =
   | 'Read' | 'Edit' | 'Write' | 'Bash' | 'WebFetch' | 'WebSearch'
@@ -57,6 +63,18 @@ export interface Agent {
   blockReason?: BlockReason;
   /** present iff this agent has a real PTY in the main process */
   ptyId?: string;
+  /** Native Codex still reuses the historical terminal identity for view
+   * compatibility, but this field is the authoritative runtime discriminator. */
+  runtimeMode?: AgentRuntimeMode;
+  runtimeStatus?: AgentRuntimeStatus;
+  runtimeThreadId?: string;
+  runtimeSessionId?: string;
+  runtimeTurnId?: string;
+  runtimeInstructionSources?: string[];
+  runtimeUsage?: RuntimeUsage;
+  runtimeApproval?: RuntimeApprovalRequest;
+  runtimeUncertainDeliveries?: string[];
+  runtimeLastError?: string;
   /** Incremented by Restart & Continue to remount this agent's xterm without
    * changing its durable PTY/session identity. */
   terminalGeneration?: number;
@@ -298,7 +316,7 @@ const LS_QUEUES = 'cth.messageQueues';
 // Fields that are large or transient — not worth persisting across reloads.
 // contextTokens/contextLimit describe a LIVE session; persisting them showed a
 // dead session's context gauge after a restart until the poll caught up.
-type PersistedAgent = Omit<Agent, 'recentAssistantText' | 'recentTextTs' | 'blockReason' | 'contextTokens' | 'contextLimit' | 'seedPrompt'>;
+type PersistedAgent = Omit<Agent, 'recentAssistantText' | 'recentTextTs' | 'blockReason' | 'contextTokens' | 'contextLimit' | 'seedPrompt' | 'runtimeApproval'>;
 
 // ─── The roster mirror ──────────────────────────────────────────────────────
 //
@@ -369,8 +387,8 @@ try {
 } catch { /* not a browser context (unit tests) */ }
 
 function slimAgents(agents: Agent[]): PersistedAgent[] {
-  return agents.map(({ recentAssistantText, recentTextTs, blockReason, contextTokens, contextLimit, seedPrompt, ...rest }) => {
-    void recentAssistantText; void recentTextTs; void blockReason; void contextTokens; void contextLimit; void seedPrompt;
+  return agents.map(({ recentAssistantText, recentTextTs, blockReason, contextTokens, contextLimit, seedPrompt, runtimeApproval, ...rest }) => {
+    void recentAssistantText; void recentTextTs; void blockReason; void contextTokens; void contextLimit; void seedPrompt; void runtimeApproval;
     return rest;
   });
 }
@@ -467,8 +485,8 @@ function persistRestorable(restorable: Agent[]): void {
   // Keeps contextTokens/contextLimit, unlike the other two: a restorable entry
   // is a spawn recipe for a session that has not been re-entered yet, so its
   // last known context size is still meaningful.
-  const slim: PersistedAgent[] = restorable.map(({ recentAssistantText, recentTextTs, blockReason, seedPrompt, ...rest }) => {
-    void recentAssistantText; void recentTextTs; void blockReason; void seedPrompt;
+  const slim: PersistedAgent[] = restorable.map(({ recentAssistantText, recentTextTs, blockReason, contextTokens, contextLimit, seedPrompt, runtimeApproval, ...rest }) => {
+    void recentAssistantText; void recentTextTs; void blockReason; void contextTokens; void contextLimit; void seedPrompt; void runtimeApproval;
     return rest;
   });
   try {

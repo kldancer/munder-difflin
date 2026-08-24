@@ -15,6 +15,7 @@ import {
   TEAM_OS_PLAN_LIMITS,
   allocatePlan,
   buildStartFromConclusionPrompt,
+  buildTeamOsPlanOutputSchema,
   validatePlanManifest,
   type TeamOsAllocationDecision,
   type TeamOsPlanManifest,
@@ -39,7 +40,7 @@ export interface TeamOsPlanningState extends TeamOsPlanRuntime {
 }
 
 export type StartFromConclusionResult =
-  | { ok: true; requestId: string; projectId: string; prompt: string; state: TeamOsPlanningState }
+  | { ok: true; requestId: string; projectId: string; prompt: string; nativePrompt: string; outputSchema: Record<string, unknown>; state: TeamOsPlanningState }
   | { ok: false; error: { code: string; message: string } };
 
 export function listPlanningStates(harnessHome?: string): TeamOsPlanningState[] {
@@ -119,6 +120,8 @@ export function startFromConclusion(args: {
     const project = projectFor(args.options, args.projectId);
     const workspaceSnapshot = resolveProjectWorkspace(args.options, project.id);
     if (!workspaceSnapshot.ok) throw new Error(workspaceSnapshot.error?.message ?? 'workspace registry is unavailable');
+    const catalog = loadTeamOsPreparationCatalog(args.options);
+    if (catalog.status !== 'ready') throw new Error(catalog.error?.message ?? 'Team OS role catalog is unavailable');
     const requestId = safeId('plan');
     const root = planningRoot(args.harnessHome);
     mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -147,12 +150,50 @@ export function startFromConclusion(args: {
       projectId: project.id,
       prompt: buildStartFromConclusionPrompt({
         requestId, project, workspaces: workspaceSnapshot.workspaces,
-        submitPath, localWrite: args.localWrite === true
+        submitPath, localWrite: args.localWrite === true,
+        roleIds: catalog.roles.map((role) => role.id),
+        capabilityProfileIds: catalog.capabilityProfiles.map((profile) => profile.id)
+      }),
+      nativePrompt: buildStartFromConclusionPrompt({
+        requestId, project, workspaces: workspaceSnapshot.workspaces,
+        submitPath, localWrite: args.localWrite === true, delivery: 'structured',
+        roleIds: catalog.roles.map((role) => role.id),
+        capabilityProfileIds: catalog.capabilityProfiles.map((profile) => profile.id)
+      }),
+      outputSchema: buildTeamOsPlanOutputSchema({
+        requestId, projectId: project.id, localWrite: args.localWrite === true
       }),
       state
     };
   } catch (error) {
     return { ok: false, error: { code: 'PLAN_START_FAILED', message: error instanceof Error ? error.message : String(error) } };
+  }
+}
+
+export function submitPlanningResult(args: {
+  harnessHome?: string;
+  requestId: string;
+  value: unknown;
+}): { ok: true } | { ok: false; error: { code: string; message: string } } {
+  try {
+    if (!args.harnessHome) throw new Error('harnessHome is not configured');
+    if (!/^plan-[a-z0-9-]+$/i.test(args.requestId)) throw new Error('invalid planning request id');
+    const requestDir = join(planningRoot(args.harnessHome), args.requestId);
+    const state = readState(requestDir);
+    if (state.requestId !== args.requestId || state.phase !== 'planning') {
+      throw new Error(`planning request is not accepting a result: ${state.phase}`);
+    }
+    let value = args.value;
+    if (typeof value === 'string') {
+      if (Buffer.byteLength(value, 'utf8') > TEAM_OS_PLAN_LIMITS.manifestBytes) throw new Error('planning result is too large');
+      value = JSON.parse(value);
+    }
+    const encoded = JSON.stringify(value);
+    if (Buffer.byteLength(encoded, 'utf8') > TEAM_OS_PLAN_LIMITS.manifestBytes) throw new Error('planning result is too large');
+    atomicJson(join(requestDir, SUBMIT_FILE), value);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: { code: 'PLAN_RESULT_REJECTED', message: error instanceof Error ? error.message : String(error) } };
   }
 }
 
