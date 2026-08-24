@@ -383,7 +383,9 @@ async function provisionTeamOsAgent(
       name: decision.roleLabel,
       provider,
       role: decision.roleId,
-      capabilities: [],
+      roleBinding: decision.roleBinding,
+      defaultCapabilityProfileIds: [],
+      capabilities: decision.roleBinding.capabilities ?? [],
       replyLanguage: config.locale,
       cwd: decision.cwd
     }
@@ -401,6 +403,9 @@ async function provisionTeamOsAgent(
         command: formatTeamOsSpawnCommand(command, launchArgs),
         model: workerModel,
         role: decision.roleId,
+        roleBinding: decision.roleBinding,
+        defaultCapabilityProfileIds: [],
+        capabilities: decision.roleBinding.capabilities ?? [],
         worktreePath: result.worktreePath,
         runtimeMode: result.runtimeMode
       });

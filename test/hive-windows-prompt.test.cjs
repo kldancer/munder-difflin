@@ -31,11 +31,12 @@ async function floor(t, opts = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-winprompt-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const hive = new HiveManager(() => home);
+  const meta = { id: 'god-1', name: 'Michael', provider: opts.provider ?? 'claude', cwd: home, isGod: true, ...(opts.meta ?? {}) };
   const inj = await hive.ensureAgent(
-    { id: 'god-1', name: 'Michael', provider: opts.provider ?? 'claude', cwd: home, isGod: true },
+    meta,
     { semanticMemory: true, knowledgeGraph: true, kgCliPath: KG_CLI, ...(opts.injectOpts ?? {}) }
   );
-  return { home, hive, inj, dir: path.join(home, 'hive', 'agents', 'god-1'), root: path.join(home, 'hive') };
+  return { home, hive, inj, dir: path.join(home, 'hive', 'agents', meta.id), root: path.join(home, 'hive') };
 }
 
 /** The injected system prompt, whichever flag this provider carries it on. */
@@ -60,6 +61,30 @@ test('stable bootstrap is bounded and rejects no-change memory noise', async (t)
   assert.match(prompt, /role "orchestrator"/);
   assert.match(prompt, /Stable identity:/);
   assert.match(prompt, /never append heartbeat, no-change, or repeated status/i);
+});
+
+test('a Team OS role adds one stable bounded delta instead of a second handbook', async (t) => {
+  const { inj, dir } = await floor(t, {
+    injectOpts: { semanticMemory: false, knowledgeGraph: false },
+    meta: {
+      id: 'delivery-1', name: '开发工程师', isGod: false, replyLanguage: 'zh-CN',
+      role: 'delivery-engineer', roleNotes: '中文开发工程师，负责有界实现与适用验证',
+      roleBinding: {
+        id: 'delivery-engineer', label: '端到端交付/Feature Owner',
+        capabilities: ['implementation', 'local-validation'],
+        authority: 'assigned-local-write', writePolicy: 'single-writer',
+        knownBlindSpots: ['must-request-capability-gap-help']
+      },
+      defaultCapabilityProfileIds: ['frontend-engineering']
+    }
+  });
+  const prompt = promptOf(inj);
+  const identity = fs.readFileSync(path.join(dir, 'identity.md'), 'utf8');
+  assert.ok(prompt.length < 4000, `role delta grew bootstrap to ${prompt.length} chars`);
+  assert.match(prompt, /ROLE CONTRACT: authority=assigned-local-write/);
+  assert.match(prompt, /never expands task authorization/);
+  assert.match(identity, /端到端交付\/Feature Owner \(delivery-engineer\)/);
+  assert.match(identity, /默认能力包：frontend-engineering/);
 });
 
 test('Codex receives the same bounded bootstrap as its positional initial prompt', async (t) => {

@@ -37,6 +37,7 @@ import {
 } from '../shared/agentProvider';
 import { MCP_CATALOG } from '../shared/mcpCatalog';
 import type { AgentRuntimeMode, AgentRuntimeStatus } from '../shared/agentRuntime';
+import type { AgentRoleBinding } from '../shared/agentRole';
 import { expandTilde } from './fs';
 
 /** The subset of HarnessConfig the hive consumes for the default-MCP merge.
@@ -134,6 +135,12 @@ export interface AgentMeta {
   /** Which CLI this agent runs on. Defaults to 'claude' when unset (legacy). */
   provider?: AgentProvider;
   role?: string;
+  /** Machine-readable Team OS role; `role` remains for legacy registries. */
+  roleBinding?: AgentRoleBinding;
+  /** Human-authored persona/role note, never used as the routing key. */
+  roleNotes?: string;
+  /** Stable expertise defaults. Task overlays stay in the work order. */
+  defaultCapabilityProfileIds?: string[];
   capabilities?: string[];
   /** Human-facing response language. Machine fields, commands and protocol ids
    *  remain byte-stable regardless of this choice. */
@@ -1187,12 +1194,30 @@ export class HiveManager {
 
   private identityText(meta: AgentMeta): string {
     const caps = (meta.capabilities ?? []).join(', ') || '—';
+    const role = meta.roleBinding;
+    const roleDisplay = role ? `${role.label} (${role.id})` : (meta.role ?? (meta.isGod ? '总控（god）' : 'Agent'));
+    const roleLinesZh = role ? [
+      `- 职责权限：${role.authority ?? '以任务合同为准'}`,
+      `- 写入策略：${role.writePolicy ?? '以本次授权与写集合为准'}`,
+      `- 已知盲点：${role.knownBlindSpots?.join('；') || '—'}`,
+      `- 默认能力包：${meta.defaultCapabilityProfileIds?.join(', ') || '—'}`,
+      '- 角色合同只决定分工与复核边界，不扩大本次任务授权。'
+    ] : [];
+    const roleLinesEn = role ? [
+      `- Authority: ${role.authority ?? 'bounded by the task contract'}`,
+      `- Write policy: ${role.writePolicy ?? 'bounded by current authorization and write set'}`,
+      `- Known blind spots: ${role.knownBlindSpots?.join('; ') || '—'}`,
+      `- Default capability profiles: ${meta.defaultCapabilityProfileIds?.join(', ') || '—'}`,
+      '- The role contract controls division of labour and review boundaries; it never widens task authorization.'
+    ] : [];
     if (meta.replyLanguage === 'zh-CN') {
       return [
         `# 身份：${meta.name} (${meta.id})`,
         '',
-        `- 角色：${meta.role ?? (meta.isGod ? '总控（god）' : 'Agent')}`,
+        `- 角色：${roleDisplay}`,
         `- 能力标签：${caps}`,
+        ...roleLinesZh,
+        meta.roleNotes ? `- 人物备注：${meta.roleNotes}` : '',
         `- 回复语言：简体中文（机器字段、命令、代码与路径保持原样）`,
         `- 工作目录：${meta.cwd}`,
         meta.isGod ? '- 你是 **god / 总控 Agent**：保持全局态势、委派执行，只亲自负责拆分、签字、冲突、集成和最终复核，不承担普通实现。' : '',
@@ -1203,8 +1228,10 @@ export class HiveManager {
     return [
       `# ${meta.name} (${meta.id})`,
       '',
-      `- Role: ${meta.role ?? (meta.isGod ? 'orchestrator (god)' : 'agent')}`,
+      `- Role: ${role ? roleDisplay : (meta.role ?? (meta.isGod ? 'orchestrator (god)' : 'agent'))}`,
       `- Capabilities: ${caps}`,
+      ...roleLinesEn,
+      meta.roleNotes ? `- Persona note: ${meta.roleNotes}` : '',
       '- Reply language: English (machine fields, commands, code, and paths stay unchanged)',
       `- Working directory: ${meta.cwd}`,
       meta.isGod ? '- You are the **god / orchestrator**. You run the floor — keep awareness of the whole team, delegate execution, and personally own only the important calls (decomposition, sign-offs, conflicts, integration), not the grunt work.' : '',
@@ -1273,10 +1300,16 @@ export class HiveManager {
     const languageLine = meta.replyLanguage === 'zh-CN'
       ? '回复语言合同：除文件名、JSON 字段、枚举、Hook、CLI 命令、代码、路径和逐字引用外，所有面向人类及 Agent 的说明、任务报告、问题与 Hive 消息都使用简体中文。不要翻译机器合同。'
       : 'Reply-language contract: use English for human-facing explanations, reports, questions, and Hive messages; never translate machine fields, commands, code, paths, or literal quotations.';
+    const role = meta.roleBinding;
+    const roleDisplay = role ? `${role.label} (${role.id})` : (meta.role ?? (meta.isGod ? 'orchestrator' : 'agent'));
+    const roleContractLine = role
+      ? `ROLE CONTRACT: authority=${role.authority ?? 'task-bounded'}; writePolicy=${role.writePolicy ?? 'task-bounded'}; knownBlindSpots=${role.knownBlindSpots?.join('; ') || 'none'}; defaultCapabilityProfiles=${meta.defaultCapabilityProfileIds?.join(', ') || 'none'}. This role controls routing and review boundaries only; it never expands task authorization.`
+      : '';
     return [
-      `You are "${meta.name}" (${meta.id}), role "${meta.role ?? (meta.isGod ? 'orchestrator' : 'agent')}"${meta.capabilities?.length ? `, capabilities: ${meta.capabilities.join(', ')}` : ''}. Stable identity: ${inDir('identity.md')}.`,
+      `You are "${meta.name}" (${meta.id}), role "${roleDisplay}"${meta.capabilities?.length ? `, capabilities: ${meta.capabilities.join(', ')}` : ''}. Stable identity: ${inDir('identity.md')}.`,
       `Private workspace: ${dir}. Shared hive: ${root}. Full protocol (read on demand): ${inRoot('PROTOCOL.md')}.`,
       languageLine,
+      roleContractLine,
       '',
       'HIVE PROTOCOL — follow it every task:',
       `1. At the START of a task, read ${inDir('memory.md')} and EVERY file in ${inDir('inbox')} (messages other agents sent you). After handling an inbox message, move its file into ${inDir('inbox', '.done')}.`,

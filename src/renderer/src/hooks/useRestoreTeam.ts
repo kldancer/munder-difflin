@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { useStore, type Agent } from '@/store/store';
 import { inferAgentProvider, restoreSpawnCommand, tokenizeCommand, type HarnessConfig } from '@/store/config';
+import { inferLegacyRoleSelection, mergeRoleCapabilities, resolveRoleBinding } from '@shared/agentRole';
 
 /** "Restore team" — respawn every worker from the previous session.
  *
@@ -82,6 +83,7 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
     let alreadyLive = 0;
     const failures: string[] = [];
     try {
+      const teamOsCatalog = await window.cth.teamOsPreparationCatalog().catch(() => null);
       // Restore every agent CONCURRENTLY. Each spawn is keyed by its own ptyId and
       // touches no cross-agent state in the renderer, and in the main process the
       // whole `pty:spawn` handler (hive registry read-modify-write included) runs
@@ -111,6 +113,11 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
           }
           const [exe, ...args] = tokenizeCommand(command);
           const ptyId = a.ptyId ?? `pty-${a.id}`;
+          const legacyRole = inferLegacyRoleSelection(a.description);
+          const roleId = a.roleBinding?.id ?? legacyRole?.roleId;
+          const roleBinding = resolveRoleBinding(roleId, teamOsCatalog?.roles ?? [], a.roleBinding);
+          const defaultCapabilityProfileIds = a.defaultCapabilityProfileIds
+            ?? legacyRole?.defaultCapabilityProfileIds ?? [];
           // An isolated agent's worktree SURVIVES an app restart on disk (it's only
           // torn down on per-tab close / mid-session exit, not on quit). So re-enter
           // that exact worktree as the cwd rather than re-isolating — `git worktree
@@ -148,13 +155,27 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
             // agent id is preserved across restart, so its registry entry,
             // memory.md and inbox reattach by id. No-op without a recorded session.
             resume: true,
-            hive: { id: a.id, name: a.name, provider, cwd, role: a.description, replyLanguage: a.replyLanguage }
+            hive: {
+              id: a.id,
+              name: a.name,
+              provider,
+              cwd,
+              role: roleBinding?.id ?? a.description,
+              roleBinding,
+              roleNotes: a.description,
+              defaultCapabilityProfileIds,
+              capabilities: mergeRoleCapabilities(roleBinding, a.capabilities),
+              replyLanguage: a.replyLanguage
+            }
           });
           if (res.ok) {
             restored++;
             return {
                 ...a,
                 provider,
+                roleBinding,
+                defaultCapabilityProfileIds,
+                capabilities: mergeRoleCapabilities(roleBinding, a.capabilities),
                 ptyId,
                 runtimeMode: res.runtimeMode ?? 'pty',
                 archived: false,

@@ -150,7 +150,7 @@ flowchart TB
 ```mermaid
 flowchart LR
     Agent(["🧑‍💻 一个角色 Agent\n不是一段 Prompt，而是一张完整工位"])
-    Identity["🪪 工牌：身份\nID · 名称 · 职责 · 回复语言"]
+    Identity["🪪 工牌：身份\nID · 人物 · 组织岗位 · 回复语言"]
     Runtime["🖥️ 电脑：运行时\nApp Server/PTY · Provider Home"]
     Coordination[["📮 信箱：协作\nInbox · Outbox · Tasks · Fleet"]]
     Conversation(["💬 对话：Session\nProvider 上下文与恢复点"])
@@ -179,7 +179,7 @@ flowchart LR
 其中：
 
 - Agent ID 是目录、注册表和路由的稳定主键；显示名称与中文角色名可以修改。
-- `identity.md` 定义角色职责，`replyLanguage` 定义自然语言输出偏好。
+- `roleBinding.id` 绑定 Team OS 的稳定组织岗位，人物名称、形象和备注不参与机器路由；`identity.md` 投影当前角色合同，`replyLanguage` 定义自然语言输出偏好。
 - Codex 原生员工使用受监管 App Server、Thread 和结构化事件；PTY 员工保留 TUI、快捷键、彩色输出、原生审批和窗口尺寸语义。
 - Provider Thread/Session 保存会话历史；`memory.md` 保存跨 Session 的提炼事实。
 - `cwd` 指向实际工作目录，可以是项目根目录，也可以是隔离 Worktree。
@@ -416,17 +416,19 @@ sequenceDiagram
 
 ## 10. 角色化与中文协作
 
-角色化由稳定身份、可编辑职责和运行时语言合同共同组成，而不是把角色名硬编码到模型中。
+角色化由稳定人物、Team OS 组织岗位合同、可叠加能力和运行时语言合同共同组成，而不是把角色名硬编码到模型中。人物回答“这是谁”，岗位回答“长期承担什么责任”，工作单回答“这一次获准做什么”。
 
 | 组成 | 存储/来源 | 作用 |
 | --- | --- | --- |
 | Agent ID | Registry 与角色目录 | 稳定路由主键，不依赖中文名称 |
-| 名称与职责 | `AgentMeta`、`identity.md` | 定义产品经理、架构师、开发、测试、审查等角色 |
+| 人物与备注 | Renderer Agent、`roleNotes` | 姓名、形象、沟通风格和用户可编辑备注，不作为自动派工键 |
+| 组织岗位 | Team OS `roles/capabilities.yaml`、`roleBinding` | 稳定 ID、职责能力、权限语义、写策略和已知盲点；是创建、恢复和自动复用的共同合同 |
+| 默认专业能力 | `defaultCapabilityProfileIds` | 人物的长期能力偏好，不等于本次任务能力或授权 |
 | 回复语言 | `replyLanguage` | 要求自然语言使用 `zh-CN` 或 `en-US` |
 | 角色 Prompt | `HiveManager` 生成 | 注入职责、消息协议、记忆和安全边界 |
-| 角色模板 | Add Agent UI / Hire Manifest | 只预填配置，必须由用户确认，不自动 Spawn |
+| 人物模板 | Add Agent UI / Hire Manifest | 只预填人物备注、岗位和默认能力，必须由用户确认，不自动 Spawn |
 
-中文角色名称若无法形成安全英文 slug，系统生成稳定的安全 Agent ID；显示名仍可完整保留中文。协议生成器只迁移已知的系统模板，自定义 `PROTOCOL.md`、自定义身份说明和既有长期记忆正文不被覆盖。
+中文人物名称若无法形成安全英文 slug，系统生成稳定的安全 Agent ID；显示名仍可完整保留中文。旧版内置中英文模板按精确已知文案向前映射到 Team OS 岗位；自定义人物不会被猜测归类。协议生成器只迁移已知的系统模板，自定义 `PROTOCOL.md`、自定义身份说明和既有长期记忆正文不被覆盖。
 
 Munder Difflin 当前没有自动加载到所有 Agent 的统一 `AGENTS.md`“蜂巢意识”。其共同意识由精简 Prompt、`PROTOCOL.md`、`registry.json`、`fleet.json`、`tasks.json` 和 `board.md` 按需组合，避免每轮都把整个办公室状态塞入上下文。
 
@@ -457,6 +459,22 @@ Codex 黄金主链不再把长 bootstrap 作为位置参数反复发送：Main �
 Michael 不应在 bootstrap 中携带整套项目规范或团队名单。普通角色也不应复制 Michael 的调度制度。基础 Codex 主链以不启用可选语义记忆/知识图谱时不超过 3,600 字符为保护门槛；可选能力只有被真实配置并可用时才增加对应说明。
 
 `identity.md` 与角色内核的关系是“可编辑工牌”与“开机接线说明”：Main 根据当前注册信息刷新工牌，`.codex/AGENTS.md` 或 PTY bootstrap 只给出路径和最短行动规则。`memory.md` 只在首次建员时创建并在后续恢复中保留，不能因为角色重启而覆盖已有长期记忆。
+
+### 10.3 所有组织岗位的 Prompt 编译规则
+
+所有人物都使用同一个编译顺序，不保存七份重复的长 Prompt：Provider 基础合同与项目 `AGENTS.md` → Hive 公共短内核 → 当前 `roleBinding` 职业差量 → 人物默认能力 ID → 本次工作单的 `OBJECTIVE / CONTEXT / CONSTRAINTS / DONE WHEN`。前四层是稳定前缀，只有角色配置变化才刷新；本次能力、读写集合、授权、验收和停止条件只随工作单发送一次。Role/Capability 只决定分工和复核边界，永远不能扩大任务授权。
+
+| 稳定岗位 ID | 常驻 Prompt 只强调 | 明确不承担 |
+| --- | --- | --- |
+| `chief-of-staff` | 定界、DAG、WIP、派工、冲突、集成和最终汇报 | 普通实现、代替领域负责人 |
+| `product-architect` | 用户结果、边界、少量方案、合同和验收语义 | 未授权实现、把不确定事实过早制度化 |
+| `delivery-engineer` | 单一纵向结果、最小实现、适用验证、集成和文档收敛 | 自行扩大范围、跨越写集合 |
+| `evidence-researcher` | 来源发现、长上下文/多模态分析、证据比较和可追溯结论 | 把来源当授权、无工具时假装事实新鲜 |
+| `quality-verifier` | 可证伪案例、回归边界、独立运行证据和 Gate 复核 | 重定义产品意图、边测边修被测实现 |
+| `release-operator` | 预检、发布、回退、运行入口与可观测事实 | 未经显式授权的外部写入、以运行事实覆盖产品合同 |
+| `independent-challenger` | 反例、替代假设、隐含风险和假设审计 | 泛泛反对、重复已有意见 |
+
+“产品经理”“架构师”“开发工程师”“测试工程师”“审查员”等 UI 模板是人物入口，不再是另一套角色权威。例如产品经理与架构师都绑定 `product-architect`，但分别默认叠加 `product-discovery` 与 `backend-domain`；测试工程师与审查员都绑定 `quality-verifier`，但分别默认叠加 `test-engineering` 与 `security-engineering`。用户也可直接选择七个组织岗位和任意默认能力；自定义角色保持可用，但不会被 Michael 当成某个标准岗位自动复用。
 
 ## 11. Session、长期记忆与上下文预算
 
@@ -518,7 +536,7 @@ Team OS 的完整产品与权威分层见 [个人团队操作系统与多项目�
 | Team OS 内容 | 当前机械使用方式 | 不会发生的行为 |
 | --- | --- | --- |
 | `projects/registry.json` 与 `projects/adapters/*.yaml` | 找到已登记项目、项目根目录及权威/机器/证据入口 | 不复制项目正文到 Team OS |
-| `roles/capabilities.yaml` | 校验 Plan 中角色和能力是否存在 | 不把七个角色手册全量注入所有 Agent |
+| `roles/capabilities.yaml` | 为添加人物提供岗位/能力目录，校验 Plan，生成角色快照并按稳定 ID 自动复用 | 不把七个角色手册全量注入所有 Agent，不授予任务权限 |
 | `templates/outcome-card.yaml` | 提供结果卡字段合同 | 不创建第二套任务数据库 |
 | 项目 `workspaces.json` | 从平台总控项目按需解析服务仓库 | 不要求把每个服务仓库逐一注册到 Team OS |
 | `organization/`、`workflows/` | 由 Michael 或维护任务按需阅读的稳定方法 | 当前不自动拼接进每次 bootstrap |
@@ -558,7 +576,7 @@ sequenceDiagram
 
 规划请求、Michael 结构化输出、规范化计划和运行状态持久化在办公室 `.work/team-os/plans/`；Hive `tasks.json` 继续是执行任务账本。原生路径把同一 Michael Thread 的规划 Turn 绑定 `outputSchema`，Main 收到完整 assistant message 后原子提交；PTY compatibility 仍可使用有界文件提交。PlanCoordinator 是确定性校验和编排器，不调用第二个模型，也不取代 Michael 的分析判断或 Provider Agent Loop。
 
-串行且属于同一计划的任务可以复用同一角色实例和 Thread/Session；无关计划复用同一职业工位时使用新 Thread/Session；真正并行的同角色 Lane 必须拥有不同 Agent 实例和活动 Thread/Session。Codex native 的 `cwd` 是上下文锚点，`writableRoots` 才是工具写入边界；PTY Provider 的可访问范围仍由工作单 scope、项目合同、本机权限与用户授权共同决定。
+串行且属于同一计划的任务可以复用同一 `roleBinding.id` 的角色实例和 Thread/Session；同岗位多人空闲时优先选择默认能力画像与本次任务能力重合更多的人，没有完全匹配仍复用同岗位人物，不为标签差异无谓增员。无关计划复用同一职业工位时使用新 Thread/Session；真正并行的同角色 Lane 必须拥有不同 Agent 实例和活动 Thread/Session。人物中文备注、名称和形象不参与匹配。应用恢复时优先用当前 Team OS 目录刷新角色合同；目录暂时不可用则保留 Roster/Registry 中的最近有效快照。Codex native 的 `cwd` 是上下文锚点，`writableRoots` 才是工具写入边界；PTY Provider 的可访问范围仍由工作单 scope、项目合同、本机权限与用户授权共同决定。
 
 ### 12.3 Provider 运行兼容边界
 

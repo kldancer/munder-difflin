@@ -4,6 +4,7 @@ import {
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import type { AgentRoleBinding } from '../shared/agentRole';
 
 export const TEAM_OS_LIMITS = {
   registryBytes: 256 * 1024,
@@ -94,9 +95,7 @@ export interface LoadTeamOsOptions {
   now?: number;
 }
 
-export interface TeamOsRole {
-  id: string;
-  label: string;
+export interface TeamOsRole extends AgentRoleBinding {
   capabilities: string[];
   authority: string;
   writePolicy: string;

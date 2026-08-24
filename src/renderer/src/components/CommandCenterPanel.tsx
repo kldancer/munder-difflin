@@ -511,7 +511,15 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
         ? { id: a.id, name: a.name, cwd: a.cwd, provider, isGod: true, role: 'orchestrator (god)', replyLanguage: a.replyLanguage }
         : a.isAssistant
         ? { id: a.id, name: a.name, cwd: a.cwd, provider, isAssistant: true, role: "Michael's prep assistant", replyLanguage: a.replyLanguage }
-        : { id: a.id, name: a.name, cwd: a.cwd, provider, role: a.description, replyLanguage: a.replyLanguage };
+        : {
+          id: a.id, name: a.name, cwd: a.cwd, provider,
+          role: a.roleBinding?.id ?? a.description,
+          roleBinding: a.roleBinding,
+          roleNotes: a.description,
+          defaultCapabilityProfileIds: a.defaultCapabilityProfileIds,
+          capabilities: a.capabilities,
+          replyLanguage: a.replyLanguage
+        };
       const res = await window.cth.spawnPty({
         id: a.ptyId,
         cwd: a.cwd,

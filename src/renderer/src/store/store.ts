@@ -5,6 +5,7 @@ import type { ThemeId } from '@/scene/office/themeRegistry';
 import type { StatusKind } from '@/components/PixelBadge';
 import type { AgentProvider } from '@shared/agentProvider';
 import type { HireManifest } from '@shared/hire';
+import type { AgentRoleBinding } from '@shared/agentRole';
 import { DEFAULT_ORG_TRIGGER, type OrgTriggerConfig, type WebhookTrigger } from '@shared/triggers';
 import { isCompactionCommand } from '@shared/providerAutomation';
 import type {
@@ -41,6 +42,12 @@ export interface Agent {
   accent: AccentColorName;
   /** persistent short context — what is this agent for (shown on the floor) */
   description: string;
+  /** Canonical Team OS organisational role. Persona/name remain independent. */
+  roleBinding?: AgentRoleBinding;
+  /** Stable expertise defaults; a plan may add task-only capability profiles. */
+  defaultCapabilityProfileIds?: string[];
+  /** Stable role capabilities plus validated hire tags. */
+  capabilities?: string[];
   project: string;
   /** legacy field — populated only for the seeded mock agents */
   tmuxTarget: string;

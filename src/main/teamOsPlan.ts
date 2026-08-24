@@ -1,5 +1,6 @@
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { TeamOsCapabilityProfile, TeamOsProjectSnapshot, TeamOsRole, TeamOsWorkspace } from './teamOs';
+import type { AgentRoleBinding } from '../shared/agentRole';
 
 export const TEAM_OS_PLAN_LIMITS = {
   tasks: 12,
@@ -28,6 +29,7 @@ export interface TeamOsPlanTask {
   objective: string;
   roleId: string;
   roleLabel: string;
+  roleBinding: AgentRoleBinding;
   capabilityProfileIds: string[];
   workspaceKey: string | null;
   cwd: string;
@@ -130,6 +132,8 @@ export interface TeamOsLiveAgent {
   id: string;
   name: string;
   role?: string;
+  roleBinding?: AgentRoleBinding;
+  defaultCapabilityProfileIds?: string[];
   cwd: string;
   status: 'idle' | 'working' | 'blocked' | 'gone';
   archived?: boolean;
@@ -158,6 +162,7 @@ export interface TeamOsAllocationDecision {
   sessionMode: 'continue' | 'fresh';
   roleId: string;
   roleLabel: string;
+  roleBinding: AgentRoleBinding;
   cwd: string;
   provider?: string;
   resumeSessionId?: string;
@@ -309,6 +314,14 @@ export function validatePlanManifest(input: unknown, context: TeamOsPlanValidati
         objective: text(row.objective, `tasks[${index}].objective`),
         roleId,
         roleLabel: role.label,
+        roleBinding: {
+          id: role.id,
+          label: role.label,
+          capabilities: [...role.capabilities],
+          authority: role.authority,
+          writePolicy: role.writePolicy,
+          knownBlindSpots: [...role.knownBlindSpots]
+        },
         capabilityProfileIds: [...new Set(capabilityProfileIds)],
         workspaceKey,
         cwd,
@@ -393,9 +406,17 @@ export function allocatePlan(
   for (const task of plan.tasks) {
     const state = runtime.tasks[task.id] ?? { status: 'planned' as const };
     if (state.status !== 'planned' || !task.dependsOn.every((dependency) => done.has(dependency))) continue;
-    const reusable = liveRoster.find((agent) =>
-      !agent.archived && agent.status === 'idle' && agent.role === task.roleId
-      && agent.cwd === task.cwd && !reserved.has(agent.id));
+    const reusable = liveRoster.filter((agent) =>
+      !agent.archived && agent.status === 'idle'
+      && (agent.roleBinding?.id ?? agent.role) === task.roleId
+      && agent.cwd === task.cwd && !reserved.has(agent.id))
+      .map((agent, order) => ({
+        agent,
+        order,
+        capabilityMatches: task.capabilityProfileIds.filter((profileId) =>
+          agent.defaultCapabilityProfileIds?.includes(profileId)).length
+      }))
+      .sort((left, right) => right.capabilityMatches - left.capabilityMatches || left.order - right.order)[0]?.agent;
     const agentId = reusable?.id ?? spawnId(task.roleId, liveRoster, reserved);
     reserved.add(agentId);
     decisions.push({
@@ -405,6 +426,7 @@ export function allocatePlan(
       sessionMode: reusable && usedByThisPlan.has(reusable.id) ? 'continue' : 'fresh',
       roleId: task.roleId,
       roleLabel: task.roleLabel,
+      roleBinding: task.roleBinding,
       cwd: task.cwd,
       ...(reusable?.provider ? { provider: reusable.provider } : {}),
       ...(reusable?.sessionId ? { resumeSessionId: reusable.sessionId } : {})

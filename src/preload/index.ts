@@ -22,6 +22,7 @@ import type {
   TeamOsWorkOrderRequest
 } from '../main/teamOs';
 import type { StartFromConclusionResult, TeamOsPlanningState } from '../main/teamOsPlanning';
+import type { AgentRoleBinding } from '../shared/agentRole';
 import type {
   AgentRuntimeMode,
   RuntimeApprovalRequest,
@@ -72,6 +73,9 @@ export interface HiveAgentMeta {
   /** Which CLI this agent runs on (claude/codex/grok/antigravity/custom); defaults claude. */
   provider?: AgentProvider;
   role?: string;
+  roleBinding?: AgentRoleBinding;
+  roleNotes?: string;
+  defaultCapabilityProfileIds?: string[];
   capabilities?: string[];
   replyLanguage?: 'zh-CN' | 'en-US';
   cwd: string;
@@ -1017,7 +1021,9 @@ const api = {
   onHiveAgentSpawned: (
     cb: (rec: {
       id: string; name: string; provider?: string; cwd: string;
-      command?: string; model?: string; role?: string; worktreePath?: string; runtimeMode?: AgentRuntimeMode;
+      command?: string; model?: string; role?: string; roleBinding?: AgentRoleBinding;
+      defaultCapabilityProfileIds?: string[]; capabilities?: string[];
+      worktreePath?: string; runtimeMode?: AgentRuntimeMode;
     }) => void
   ): (() => void) => {
     const listener = (_e: IpcRendererEvent, payload: Parameters<typeof cb>[0]) => cb(payload);

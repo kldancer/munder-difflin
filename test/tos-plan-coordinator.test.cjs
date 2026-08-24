@@ -78,6 +78,7 @@ test('validates and normalizes a bounded DAG with workspace-derived cwd', () => 
   assert.equal(result.ok, true);
   assert.equal(result.plan.tasks[0].cwd, serviceRoot);
   assert.equal(result.plan.tasks[0].write[0], `${serviceRoot}/src/implement`);
+  assert.deepEqual(result.plan.tasks[0].roleBinding, context().roles[0]);
   assert.deepEqual(result.plan.authorization, {
     localWrite: true, gitWrite: false, remoteWrite: false, productionWrite: false, destructive: false
   });
@@ -130,6 +131,29 @@ test('reuses one idle role instance serially and spawns distinct instances for p
   assert.equal(serial.decisions[0].mode, 'reuse');
   assert.equal(serial.decisions[0].sessionMode, 'continue');
   assert.equal(serial.decisions[0].resumeSessionId, 'session-1');
+});
+
+test('reuses a manually hired persona by canonical role binding instead of its Chinese note', () => {
+  const validated = validatePlanManifest(manifest([task('implement')]), context());
+  assert.equal(validated.ok, true);
+  const allocation = allocatePlan(validated.plan, [{
+    id: 'dwight', name: 'Dwight', role: '中文开发工程师，负责有界实现与适用验证',
+    roleBinding: { id: 'delivery-engineer', label: '端到端交付' },
+    cwd: serviceRoot, status: 'idle', provider: 'codex'
+  }], { phase: 'ready', tasks: { implement: { status: 'planned' } } });
+  assert.equal(allocation.decisions[0].mode, 'reuse');
+  assert.equal(allocation.decisions[0].agentId, 'dwight');
+});
+
+test('prefers matching default expertise among idle agents with the same role', () => {
+  const validated = validatePlanManifest(manifest([task('implement')]), context());
+  assert.equal(validated.ok, true);
+  const shared = { roleBinding: { id: 'delivery-engineer', label: '端到端交付' }, cwd: serviceRoot, status: 'idle', provider: 'codex' };
+  const allocation = allocatePlan(validated.plan, [
+    { id: 'backend-owner', name: '后端', defaultCapabilityProfileIds: ['backend-domain'], ...shared },
+    { id: 'frontend-owner', name: '前端', defaultCapabilityProfileIds: ['frontend-engineering'], ...shared }
+  ], { phase: 'ready', tasks: { implement: { status: 'planned' } } });
+  assert.equal(allocation.decisions[0].agentId, 'frontend-owner');
 });
 
 test('start prompt keeps Michael in the same session and names the bounded submit path', () => {
@@ -236,6 +260,8 @@ test('durable coordinator turns Michael submission into a real task dispatch and
   assert.equal(ledger[0].status, 'doing');
   assert.equal(sent.length, 1);
   assert.match(sent[0].body, /OBJECTIVE:/);
+  assert.match(sent[0].body, /authority=local/);
+  assert.match(sent[0].body, /role and capability profiles control division of labour, not authorization/i);
   assert.equal(listPlanningStates(fx.harnessHome)[0].phase, 'executing');
 
   ledger[0].status = 'done';

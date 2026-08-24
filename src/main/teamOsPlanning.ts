@@ -231,12 +231,14 @@ function syncRuntime(plan: TeamOsPlanManifest, state: TeamOsPlanningState, ledge
 }
 
 function taskMessage(plan: TeamOsPlanManifest, task: TeamOsPlanTask): string {
+  const role = task.roleBinding;
   return [
     `OBJECTIVE: ${task.objective}`,
     `CONTEXT: Team OS plan ${plan.requestId}; project ${plan.projectId}; workspace ${task.workspaceKey ?? 'project-root'}; cwd ${task.cwd}`,
-    `CONSTRAINTS: role=${task.roleLabel} (${task.roleId}); capabilities=${task.capabilityProfileIds.join(', ') || 'none'}; read=${task.read.join(', ') || 'none'}; write=${task.write.join(', ') || 'none'}; authorization localWrite=${plan.authorization.localWrite}, git/remote/production/destructive=false; stop=${task.stopConditions.join('; ')}`,
+    `ROLE: ${task.roleLabel} (${task.roleId}); authority=${role.authority ?? 'task-bounded'}; writePolicy=${role.writePolicy ?? 'task-bounded'}; knownBlindSpots=${role.knownBlindSpots?.join('; ') || 'none'}`,
+    `CONSTRAINTS: taskCapabilities=${task.capabilityProfileIds.join(', ') || 'none'}; read=${task.read.join(', ') || 'none'}; write=${task.write.join(', ') || 'none'}; authorization localWrite=${plan.authorization.localWrite}, git/remote/production/destructive=false; stop=${task.stopConditions.join('; ')}`,
     `DONE WHEN: ${task.acceptance.join('; ')}${task.validation.length ? `; validation: ${task.validation.join('; ')}` : ''}`,
-    'Reply to Michael through your outbox with decisions, changed paths, validation and blockers. Update the assigned task card; do not widen authorization.'
+    'The role and capability profiles control division of labour, not authorization. Reply to Michael through your outbox with decisions, changed paths, validation and blockers. Update the assigned task card; do not widen authorization.'
   ].join('\n');
 }
 
@@ -324,6 +326,8 @@ export class TeamOsPlanCoordinator {
     const registry = this.deps.registry();
     const allocation = allocatePlan(plan, Object.entries(registry.agents).map(([agentId, agent]) => ({
       id: agentId, name: agent.name, role: agent.role, cwd: agent.cwd, status: agent.status,
+      roleBinding: agent.roleBinding,
+      defaultCapabilityProfileIds: agent.defaultCapabilityProfileIds,
       archived: agent.archived, provider: agent.provider, sessionId: agent.sessionId
     })), state);
     state.phase = allocation.phase;

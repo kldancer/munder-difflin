@@ -103,7 +103,12 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
         resume: true, resumeSessionId: sid, requireResume: true, isolate: false,
         hive: {
           id: agent.id, name: agent.name, cwd: agent.cwd, provider,
-          role: agent.description, isGod: agent.isGod, isAssistant: agent.isAssistant,
+          role: agent.roleBinding?.id ?? agent.description,
+          roleBinding: agent.roleBinding,
+          roleNotes: agent.description,
+          defaultCapabilityProfileIds: agent.defaultCapabilityProfileIds,
+          capabilities: agent.capabilities,
+          isGod: agent.isGod, isAssistant: agent.isAssistant,
           replyLanguage: agent.replyLanguage
         }
       });

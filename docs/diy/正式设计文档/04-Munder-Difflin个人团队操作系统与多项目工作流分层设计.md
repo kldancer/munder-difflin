@@ -142,6 +142,8 @@ Team OS 不纳入 Harness 快照工具的默认输入，因为它不是 `harness
 | 人物形象 | Munder 中长期可识别的姓名、外观和默认能力权重 | 可以叫“前端工程师”或“UI 设计师”，但名称不触发强制路由或授权 |
 | Agent 实例 | 当前 Provider、Runtime、Thread/Session、目录和任务状态 | 按结果卡临时创建或复用，不拥有长期制度 |
 
+`roles/capabilities.yaml` 是组织岗位与能力画像的唯一机器目录。Munder 的手动“添加 Agent”、团队恢复和 PlanCoordinator 自动派工都保存/读取同一个 `roleBinding.id`；人物中文名称、形象和备注不再充当路由键。人物保存当前合同快照与默认能力画像，目录可用时刷新、暂时不可用时保留最近有效快照；工作单能力是本次临时增量，不反向污染人物默认值。自定义人物仍可运行，但未绑定稳定岗位 ID 时不参与标准岗位自动复用。
+
 UI/UX 负责用户流程、信息架构、交互/错误状态和视觉验收；前端工程负责组件、客户端状态、API 集成、可访问性、性能和浏览器事实。小任务允许同一 Agent 顺序承担两种能力；只有专业事实或工具不同，并同时存在独立验收、可分写集合、风险保护或长期高频需求时，才实例化专职 Agent。后端、数据、安全与运行能力采用同一门槛。项目目录名或空闲 Agent 数量不能单独成为拆分理由。
 
 协作关系必须跟随 changed paths、调用/数据依赖、失败责任和项目权威，而不是跟随前端/后端的组织名称。永久专业所有者只适用于具有稳定业务所有权、明确接口、独立测试/部署能力和持续工作量的模块或服务；否则保持一个纵向 owner，由专家给出合同、证据或独立验证。这吸收 DORA 小批次/松耦合、社会技术一致性和 Team Topologies 的端到端责任思想，并在日常真实任务中持续观察、纠偏和精简。
@@ -158,7 +160,7 @@ UI/UX 负责用户流程、信息架构、交互/错误状态和视觉验收；�
 
 当前候选顺序是：保留 Gemini 作为多模态/超长材料侦察通道，保留 DeepSeek 作为独立推理审查与低成本批处理通道；新增试点优先评估 Grok 4.6 的时效研究、开放网络挑战与引用能力，其次评估 Kimi K3 的中文知识工作、长文档与多模态办公能力；Qwen3-Coder-Plus 仅在中文代码、阿里生态或本地私有模型需求出现时再评估。Claude 按用户决策排除。候选、已集成和黄金主链是三个不同状态，不得混写。
 
-Team OS loader 只读取和校验上述合同，不自动选人、自动换模型或静默降级。自动路由与自动选模只有在长期真实使用中形成明确价值和运行需求时才按独立功能设计；模型和角色选择始终由负责人显式决定并可追踪。
+Team OS loader 只读取和校验上述合同，不调用模型、不自动换模型或静默降级。角色由 Michael 在 Plan Manifest 中显式选择并可追踪；PlanCoordinator 只按已校验的 `roleBinding.id` 确定性复用/创建人物。更进一步的能力评分选人和自动选模只有在长期真实使用中证明价值后才独立设计。
 
 运行时按 `config.teamOsHome`、`MUNDER_TEAM_OS_HOME`、`~/Munder-Difflin/team-os` 的优先级解析 Team OS 根目录。Main Process 只读取固定的 `projects/registry.json` 与注册适配器，单文件上限 256 KiB、项目上限 100、每项目引用上限 32；适配器与引用均执行根目录约束和真实路径校验，拒绝绝对引用、`..` 逃逸、文件符号链接和解析后越界。返回值只包含路径、存在性、类型、布尔约束和错误状态，不返回权威正文、Prompt、Transcript、任务或秘密。
 
@@ -168,7 +170,7 @@ Team OS 在 `projects/ownership/` 记录 `retain`、`extracted`、`dedupeAfter` 
 
 空白“准备工作”表单不是默认入口，其编译接口只作为兼容和高级检查能力保留。正常主链由用户在同一个 Michael Thread/Session 中讨论；精确发送或点击“按结论开始推进”后，Main Process 建立有界规划请求，并把项目权威引用、紧凑 workspace 索引和提交协议排入 Michael 当前队列。项目文档正文仍由 Michael 按需读取，不由 Renderer 复制。
 
-确定性 PlanCoordinator 不建立第二个模型循环或任务数据库。Codex native 的 Michael 在原 Thread 中通过 `outputSchema` 返回 `Plan Manifest`；Coordinator 校验 schema、项目/workspace、角色/能力、DAG、并发宽度、写集合和授权，随后复用现有 Hive task、inbox、Agent spawn 与 Provider Runtime 原语执行。串行同计划任务继续使用同一实例/Thread/Session；空闲角色实例被无关计划复用时保留工牌、信箱和长期记忆，但切换新 Thread/Session；真正并行的同角色 Lane 获得不同实例和活动 Thread/Session。Codex native 的 `cwd` 是上下文锚点，精确 `writableRoots` 与审批约束实际写入；PTY Provider 继续服从计划 scope 与本机权限。
+确定性 PlanCoordinator 不建立第二个模型循环或任务数据库。Codex native 的 Michael 在原 Thread 中通过 `outputSchema` 返回 `Plan Manifest`；Coordinator 校验 schema、项目/workspace、角色/能力、DAG、并发宽度、写集合和授权，随后按稳定岗位 ID 复用现有 Hive task、inbox、Agent spawn 与 Provider Runtime 原语执行。串行同计划任务继续使用同一实例/Thread/Session；空闲角色实例被无关计划复用时保留人物、工牌、信箱和长期记忆，但切换新 Thread/Session；真正并行的同角色 Lane 获得不同实例和活动 Thread/Session。工作单携带岗位职责/写策略/盲点和本次能力/读写/授权/验收/停止条件，岗位永不扩大授权。Codex native 的 `cwd` 是上下文锚点，精确 `writableRoots` 与审批约束实际写入；PTY Provider 继续服从计划 scope 与本机权限。
 
 Codex 主链默认由 `gpt-5.6-sol` Michael 负责讨论、方案判断、DAG 和综合，自动创建的普通工作者默认使用 `gpt-5.6-luna`。Main Process 在 Codex native 中把模型作为 Thread/Turn 结构化参数，在 PTY compatibility 中继续使用独立 argv；Provider、命令和模型随角色卡持久化，不得在恢复时静默退回 CLI 默认模型。
 

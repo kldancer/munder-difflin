@@ -1015,6 +1015,9 @@ export function useHive(config: HarnessConfig | null): void {
           command: rec.command,
           provider: rec.provider as Agent['provider'],
           model: rec.model,
+          roleBinding: rec.roleBinding,
+          defaultCapabilityProfileIds: rec.defaultCapabilityProfileIds,
+          capabilities: rec.capabilities,
           runtimeMode: rec.runtimeMode ?? 'pty',
           worktreePath: rec.worktreePath,
         });
@@ -1034,6 +1037,9 @@ export function useHive(config: HarnessConfig | null): void {
         character,
         accent: SPAWN_ACCENTS[h],
         description: rec.role || 'a fresh harness',
+        roleBinding: rec.roleBinding,
+        defaultCapabilityProfileIds: rec.defaultCapabilityProfileIds,
+        capabilities: rec.capabilities,
         project,
         tmuxTarget: '',
         cwd: rec.cwd,
@@ -1201,7 +1207,15 @@ export function useHive(config: HarnessConfig | null): void {
           ? { id: a.id, name: a.name, cwd, provider, isGod: true, role: 'orchestrator (god)', replyLanguage: a.replyLanguage ?? config.locale }
           : a.isAssistant
           ? { id: a.id, name: a.name, cwd, provider, isAssistant: true, role: "Michael's prep assistant", replyLanguage: a.replyLanguage ?? config.locale }
-          : { id: a.id, name: a.name, cwd, provider, role: a.description, replyLanguage: a.replyLanguage ?? config.locale };
+          : {
+            id: a.id, name: a.name, cwd, provider,
+            role: a.roleBinding?.id ?? a.description,
+            roleBinding: a.roleBinding,
+            roleNotes: a.description,
+            defaultCapabilityProfileIds: a.defaultCapabilityProfileIds,
+            capabilities: a.capabilities,
+            replyLanguage: a.replyLanguage ?? config.locale
+          };
         // Spawn at the terminal's real grid so the TUI's absolute cursor moves land
         // in the right cells (a size mismatch scatters the redraw).
         const entry = acquireTerminal(deadId);

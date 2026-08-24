@@ -9,6 +9,12 @@ import { useStore, type Agent } from '@/store/store';
 import { OFFICE_CAST, DEFAULT_CHARACTER, type OfficeCharacterName } from '@/scene/office/cast';
 import { type AccentColorName } from '@/design/tokens';
 import type { HireManifest } from '@shared/hire';
+import {
+  inferLegacyRoleSelection,
+  mergeRoleCapabilities,
+  resolveRoleBinding
+} from '@shared/agentRole';
+import type { TeamOsPreparationCatalog } from '../../../main/teamOs';
 import { MCP_CATALOG } from '@shared/mcpCatalog';
 import {
   OSS_LOCAL_PICKS,
@@ -47,30 +53,43 @@ const ossLink: CSSProperties = { color: 'var(--cth-ink-900)', textDecoration: 'u
 
 // One-click briefing templates — fill Description + Goal with a sharp, ready-to-run
 // role so a user isn't staring at a blank field (item 7).
-const DESCRIPTION_TEMPLATES_EN: { label: string; description: string; goal: string }[] = [
+interface RoleTemplate {
+  label: string;
+  description: string;
+  goal: string;
+  roleId: string;
+  capabilityProfileIds: string[];
+}
+
+const DESCRIPTION_TEMPLATES_EN: RoleTemplate[] = [
   {
     label: 'Repo janitor',
     description: 'keeps the codebase tidy and healthy',
+    roleId: 'delivery-engineer', capabilityProfileIds: [],
     goal: 'Continuously hunt for dead code, lint errors, flaky tests, and small safe refactors. Fix the safe ones and leave a note for anything risky. Never change behavior without flagging it.'
   },
   {
     label: 'Docs writer',
     description: 'keeps docs in sync with the code',
+    roleId: 'delivery-engineer', capabilityProfileIds: [],
     goal: 'Watch for code changes that outdate the README and docs, then update them. Write for newcomers and prefer concrete examples over prose.'
   },
   {
     label: 'Bug triager',
     description: 'investigates and root-causes bugs',
+    roleId: 'delivery-engineer', capabilityProfileIds: ['test-engineering'],
     goal: 'For each reported issue: reproduce it, find the root cause, then propose a minimal fix with evidence. No fixes without a confirmed root cause.'
   },
   {
     label: 'Research assistant',
     description: 'gathers and summarizes information',
+    roleId: 'evidence-researcher', capabilityProfileIds: [],
     goal: 'Research the questions you are given across multiple sources, verify the key claims, and return a concise, cited summary.'
   },
   {
     label: 'Release manager',
     description: 'prepares and ships releases',
+    roleId: 'release-operator', capabilityProfileIds: ['sre-observability'],
     goal: 'Track what has shipped since the last release, update the changelog and version, and draft clear release notes.'
   }
 ];
@@ -81,26 +100,31 @@ const DESCRIPTION_TEMPLATES_ZH: typeof DESCRIPTION_TEMPLATES_EN = [
   {
     label: '产品经理',
     description: '中文产品经理，负责需求边界、验收标准与优先级',
+    roleId: 'product-architect', capabilityProfileIds: ['product-discovery'],
     goal: '始终用中文澄清目标、非目标、用户价值、依赖与验收标准。先核对现有事实，再把工作拆成可独立验收的任务；不得代替技术角色修改实现，遇到范围或业务冲突时升级给 god。'
   },
   {
     label: '架构师',
     description: '中文架构师，负责接口、依赖方向与演进边界',
+    roleId: 'product-architect', capabilityProfileIds: ['backend-domain'],
     goal: '始终用中文给出少量可证伪方案，依据真实代码和业务所有权选择最小设计。明确接口、数据流、失败语义、迁移与测试边界；不做无合同的重构，跨 Lane 决策提交 god 复核。'
   },
   {
     label: '开发工程师',
     description: '中文开发工程师，负责有界实现与适用验证',
+    roleId: 'delivery-engineer', capabilityProfileIds: [],
     goal: '始终用中文报告进展。按任务合同实现最小正确改动，保护现有修改，只触碰声明的写集合；运行适用测试并回报实现、验证、风险和下一步，禁止自行扩大范围。'
   },
   {
     label: '测试工程师',
     description: '中文测试工程师，负责可复现验证与运行证据',
+    roleId: 'quality-verifier', capabilityProfileIds: ['test-engineering'],
     goal: '始终用中文设计并执行最小反馈环，覆盖正常路径、失败路径、恢复和兼容性。只记录可复现事实与收据，不修改产品实现；发现失败时给出精确输入、期望、实际与最小复现。'
   },
   {
     label: '审查员',
     description: '中文审查员，负责正确性、安全与 Gate 关闭复核',
+    roleId: 'quality-verifier', capabilityProfileIds: ['security-engineering'],
     goal: '始终用中文进行只读审查，按严重度列出带路径和行号的可执行发现，核对合同、实现、测试、真实运行与收据是否闭合。没有发现时明确说明剩余风险，不替代实现角色直接改代码。'
   }
 ];
@@ -225,6 +249,20 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   );
   const [description, setDescription] = useState(pendingHire?.description ?? 'a fresh harness');
   const [hireMeta, setHireMeta] = useState<HireManifest | null>(pendingHire);
+  const pendingRole = inferLegacyRoleSelection(pendingHire?.description);
+  const [teamOsCatalog, setTeamOsCatalog] = useState<TeamOsPreparationCatalog | null>(null);
+  const [selectedRoleId, setSelectedRoleId] = useState(pendingRole?.roleId ?? '');
+  const [defaultCapabilityProfileIds, setDefaultCapabilityProfileIds] = useState<string[]>(
+    pendingRole?.defaultCapabilityProfileIds ?? []
+  );
+
+  useEffect(() => {
+    let alive = true;
+    void window.cth.teamOsPreparationCatalog()
+      .then((catalog) => { if (alive) setTeamOsCatalog(catalog); })
+      .catch(() => { /* custom roles remain available when Team OS is offline */ });
+    return () => { alive = false; };
+  }, []);
 
   // Picking a model rebuilds the command; the command field stays editable for
   // power users (it's the source of truth for the actual spawn).
@@ -353,6 +391,9 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
     setModel(m.model);
     setCommand(hireCommand(m));
     if (m.description) setDescription(m.description);
+    const selection = inferLegacyRoleSelection(m.description);
+    setSelectedRoleId(selection?.roleId ?? '');
+    setDefaultCapabilityProfileIds(selection?.defaultCapabilityProfileIds ?? []);
     setGoal(m.goal ?? '');
     setReplyLanguage(m.replyLanguage ?? config.locale);
     setIsolate(m.isolate ?? false);
@@ -376,6 +417,8 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
     setBusy(true);
     const id = uniqueId(name);
     const ptyId = `pty-${id}`;
+    const roleBinding = resolveRoleBinding(selectedRoleId, teamOsCatalog?.roles ?? []);
+    const stableCapabilities = mergeRoleCapabilities(roleBinding, hireMeta?.capabilities ?? []);
     // Split the editable command field into argv-style pieces for node-pty.
     // Quote-aware so an agy model label like "Gemini 3.1 Pro (High)" — or any
     // auto-mode flags appended to the command — stays one argument.
@@ -400,9 +443,12 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
         name: name.trim(),
         provider,
         cwd,
-        role: description.trim() || undefined,
-        // A hire manifest may carry validated capability tags (routing hints).
-        capabilities: hireMeta?.capabilities,
+        role: roleBinding?.id ?? (description.trim() || undefined),
+        roleBinding,
+        roleNotes: description.trim() || undefined,
+        defaultCapabilityProfileIds,
+        // Role capabilities drive stable routing; hire tags remain extra hints.
+        capabilities: stableCapabilities,
         replyLanguage
       }
     });
@@ -427,6 +473,9 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
       character,
       accent,
       description: description.trim() || 'a fresh harness',
+      roleBinding,
+      defaultCapabilityProfileIds,
+      capabilities: stableCapabilities,
       project: basename(spawnedCwd),
       tmuxTarget: '',
       cwd: spawnedCwd,
@@ -958,12 +1007,36 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
 
                 {section === 'briefing' && (
                   <>
+                    <Row label={a('organizationalRole')}>
+                      <select
+                        value={selectedRoleId}
+                        onChange={(e) => {
+                          setSelectedRoleId(e.target.value);
+                          setDefaultCapabilityProfileIds([]);
+                        }}
+                        style={inputStyle}
+                      >
+                        <option value="">{a('customRole')}</option>
+                        {(teamOsCatalog?.roles ?? []).map((role) => (
+                          <option key={role.id} value={role.id}>{role.label} · {role.id}</option>
+                        ))}
+                      </select>
+                      <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>
+                        {(teamOsCatalog?.roles?.length ?? 0) > 0 ? a('roleHelp') : a('teamOsUnavailable')}
+                      </span>
+                    </Row>
+
                     <Row label={a('templates')}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {(config.locale === 'zh-CN' ? DESCRIPTION_TEMPLATES_ZH : DESCRIPTION_TEMPLATES_EN).map((t) => (
                           <button
                             key={t.label}
-                            onClick={() => { setDescription(t.description); setGoal(t.goal); }}
+                            onClick={() => {
+                              setDescription(t.description);
+                              setGoal(t.goal);
+                              setSelectedRoleId(t.roleId);
+                              setDefaultCapabilityProfileIds([...t.capabilityProfileIds]);
+                            }}
                             title={t.goal}
                             style={{
                               padding: '3px 8px 1px',
@@ -978,6 +1051,29 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                         ))}
                       </div>
                     </Row>
+
+                    {(teamOsCatalog?.capabilityProfiles?.length ?? 0) > 0 && (
+                      <Row label={a('defaultCapabilities')}>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {teamOsCatalog!.capabilityProfiles.map((profile) => {
+                            const active = defaultCapabilityProfileIds.includes(profile.id);
+                            return (
+                              <button
+                                key={profile.id}
+                                onClick={() => setDefaultCapabilityProfileIds((current) => active
+                                  ? current.filter((id) => id !== profile.id)
+                                  : [...current, profile.id])}
+                                title={profile.activationSignals.join(' · ')}
+                                style={ossChip(active, accent)}
+                              >
+                                {profile.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>{a('capabilitiesHelp')}</span>
+                      </Row>
+                    )}
 
                     <Row label={a('replyLanguage')}>
                       <select
