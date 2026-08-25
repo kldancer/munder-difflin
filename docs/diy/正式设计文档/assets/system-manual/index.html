@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Munder Difflin 系统说明书</title>
+  <link rel="stylesheet" href="manual.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <a class="eyebrow" href="../../00-Munder-Difflin系统说明书.md">MUNDER DIFFLIN · 权威系统说明书</a>
+      <div class="hero-copy">
+        <div>
+          <h1>看懂你的本地智能体专业团队</h1>
+          <p>从一句“按结论开始推进”，看清 Munder、Team OS、Hive、Codex App Server、其他 Provider 与项目仓库怎样协作。</p>
+        </div>
+        <div class="legend" aria-label="形象图例">
+          <span>🏢 办公室</span><span>📚 公司制度</span><span>🐝 运行账本</span><span>🧠 Agent 大脑</span><span>🏭 项目工厂</span>
+        </div>
+      </div>
+    </header>
+
+    <nav class="chapter-tabs" aria-label="说明书章节">
+      <button class="chapter-tab is-active" type="button" data-chapter="architecture">① 架构总览</button>
+      <button class="chapter-tab" type="button" data-chapter="journey">② 一次任务</button>
+      <button class="chapter-tab" type="button" data-chapter="files">③ 文件显微镜</button>
+      <button class="chapter-tab" type="button" data-chapter="failures">④ 故障恢复</button>
+    </nav>
+
+    <main>
+      <section class="chapter is-active" data-panel="architecture">
+        <div class="section-heading">
+          <div><span class="kicker">先建立心智模型</span><h2>每层只保管一种事实</h2></div>
+          <p>点击任意建筑，查看它拥有、读取、写入和明确不负责的内容。</p>
+        </div>
+        <div class="architecture-layout">
+          <div class="city" data-city aria-label="系统架构图"></div>
+          <aside class="inspector" data-layer-inspector aria-live="polite"></aside>
+        </div>
+        <div class="rule-strip"><strong>唯一依赖方向</strong><span>稳定制度与项目事实 → Munder 编译与组织 → Provider 执行 → Hive 记录协作事实 → Munder 投影给你</span></div>
+      </section>
+
+      <section class="chapter" data-panel="journey">
+        <div class="section-heading">
+          <div><span class="kicker">任务链动画</span><h2>一句话怎样变成可验收成果</h2></div>
+          <p>播放完整链路，或逐步查看每一跳是谁判断、谁记录、谁执行。</p>
+        </div>
+        <div class="journey-controls">
+          <button type="button" data-prev-step>← 上一步</button>
+          <button class="primary-action" type="button" data-play-journey>▶ 自动播放</button>
+          <button type="button" data-next-step>下一步 →</button>
+          <div class="journey-progress" aria-hidden="true"><span data-journey-progress></span></div>
+          <output data-step-count>1 / 9</output>
+        </div>
+        <div class="journey-stage">
+          <div class="journey-track" data-journey-track></div>
+          <article class="step-card" data-step-card aria-live="polite"></article>
+        </div>
+      </section>
+
+      <section class="chapter" data-panel="files">
+        <div class="section-heading">
+          <div><span class="kicker">真实文件，不靠想象</span><h2>沿着目录找到每一种记忆</h2></div>
+          <p>选择档案柜，再点击文件。每张卡都说明写入者、保存内容和禁止混入的内容。</p>
+        </div>
+        <div class="file-layout">
+          <div>
+            <div class="file-tabs" role="tablist" aria-label="文件分组">
+              <button type="button" class="is-active" data-file-group="hive">🐝 Hive</button>
+              <button type="button" data-file-group="team-os">📚 Team OS</button>
+              <button type="button" data-file-group="provider">🧠 Provider Home</button>
+              <button type="button" data-file-group="project">🏭 项目</button>
+            </div>
+            <div class="file-list" data-file-list></div>
+          </div>
+          <aside class="file-inspector" data-file-inspector aria-live="polite"></aside>
+        </div>
+      </section>
+
+      <section class="chapter" data-panel="failures">
+        <div class="section-heading">
+          <div><span class="kicker">恢复而不是假装成功</span><h2>故障发生时哪些东西不会丢</h2></div>
+          <p>选择一种故障，查看系统保留什么、怎样恢复，以及为何禁止某些“自动补救”。</p>
+        </div>
+        <div class="failure-layout">
+          <div class="failure-list" data-failure-list></div>
+          <article class="failure-detail" data-failure-detail aria-live="polite"></article>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>说明书版本 <b data-version></b> · 解释投影，不替代专题机器合同</span>
+      <a href="../../00-Munder-Difflin系统说明书.md#14-怎样持续维护而不让说明书失真">维护规则</a>
+    </footer>
+  </div>
+  <script src="manual-data.js"></script>
+  <script src="manual.js"></script>
+</body>
+</html>

@@ -4,9 +4,9 @@
 
 ## 1. 结论与非目标
 
-个人 Team OS 应独立维护在 `~/Munder-Difflin/team-os/`，而不是整体迁入某个项目仓库，也不能放进 `office/hive`。它负责跨项目复用的组织制度、角色合同、通用工作流、结果模板、项目索引和评测准则；项目自己的业务事实、机器计划、Gate、生产环境与正式设计继续由项目仓库拥有。
+个人 Team OS 应独立维护在 `~/go/src/team-os/`，而不是整体迁入某个项目仓库，也不能放进 `office/hive`。它负责跨项目复用的组织制度、角色合同、通用工作流、结果模板、项目索引和评测准则；项目自己的业务事实、机器计划、Gate、生产环境与正式设计继续由项目仓库拥有。
 
-当前个人实例路径是 `/Users/kailonyang/Munder-Difflin/team-os`。Munder 已将它实现为可配置的 `teamOsHome`，并保留环境变量与用户目录默认约定，产品逻辑不硬编码个人绝对路径。
+当前个人实例路径是 `/Users/kailonyang/go/src/team-os`。Munder 已将它实现为可配置的 `teamOsHome`，并保留环境变量与用户目录默认约定，产品逻辑不硬编码个人绝对路径。
 
 本设计不建立第二套任务调度器，不复制 Provider Agent Loop，不把所有项目统一成相同流程，也不要求每次任务启动全部专家。Munder 仍负责可视化、角色、Provider Runtime、消息与运行控制；Team OS 只提供可版本化的稳定组织合同。
 
@@ -15,7 +15,7 @@
 | 层级 | 当前实例 | 拥有的事实 | 不拥有的事实 |
 | --- | --- | --- | --- |
 | Munder 产品源码 | `/Users/kailonyang/go/src/munder-difflin` | 应用能力、UI、IPC、Hive、Provider Bridge、投影与加载规则 | 某个项目的业务合同、个人运行 Session |
-| 个人 Team OS | `/Users/kailonyang/Munder-Difflin/team-os` | 通用制度、角色、流程、模板、项目注册、评测准则 | 项目专属 Gate、生产事实、运行日志与 Transcript |
+| 个人 Team OS | `/Users/kailonyang/go/src/team-os` | 通用制度、角色、流程、模板、项目注册、评测准则 | 项目专属 Gate、生产事实、运行日志与 Transcript |
 | 运行态办公室 | `/Users/kailonyang/Munder-Difflin/office`、`office-dev` | Agent 身份实例、Session、Inbox/Outbox、任务、记忆、Provider Home | 通用制度权威、项目正式设计权威 |
 | 项目权威 | 例如 `/Users/kailonyang/go/src/jusuan-installer` | 项目 `AGENTS.md`、机器计划、Gate、业务/实现链、正式设计、生产事实、项目 Skills | 其他项目合同和 Munder 产品实现 |
 
@@ -162,7 +162,7 @@ UI/UX 负责用户流程、信息架构、交互/错误状态和视觉验收；�
 
 Team OS loader 只读取和校验上述合同，不调用模型、不自动换模型或静默降级。角色由 Michael 在 Plan Manifest 中显式选择并可追踪；PlanCoordinator 只按已校验的 `roleBinding.id` 确定性复用/创建人物。更进一步的能力评分选人和自动选模只有在长期真实使用中证明价值后才独立设计。
 
-运行时按 `config.teamOsHome`、`MUNDER_TEAM_OS_HOME`、`~/Munder-Difflin/team-os` 的优先级解析 Team OS 根目录。Main Process 只读取固定的 `projects/registry.json` 与注册适配器，单文件上限 256 KiB、项目上限 100、每项目引用上限 32；适配器与引用均执行根目录约束和真实路径校验，拒绝绝对引用、`..` 逃逸、文件符号链接和解析后越界。返回值只包含路径、存在性、类型、布尔约束和错误状态，不返回权威正文、Prompt、Transcript、任务或秘密。
+运行时按 `config.teamOsHome`、`MUNDER_TEAM_OS_HOME`、`~/go/src/team-os` 的优先级解析 Team OS 根目录。Main Process 只读取固定的 `projects/registry.json` 与注册适配器，单文件上限 256 KiB、项目上限 100、每项目引用上限 32；适配器与引用均执行根目录约束和真实路径校验，拒绝绝对引用、`..` 逃逸、文件符号链接和解析后越界。返回值只包含路径、存在性、类型、布尔约束和错误状态，不返回权威正文、Prompt、Transcript、任务或秘密。
 
 Command Center 使用“项目与权威合同”标签呈现 Team OS；设置页只提供独立目录选择，不建立第二个首页、项目管理器或任务数据库。总览展示项目状态、根目录、适配器、权威/机器/证据引用及约束；活动阶段只读取 PlanCoordinator 的持久状态，不从 Hive 文本、终端输出或文件时间猜测。Team OS 缺失、注册表无效或单个适配器失败均显式显示，终端、Agent 与 Hive 不依赖该读取成功。
 

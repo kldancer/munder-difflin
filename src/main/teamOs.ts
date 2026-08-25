@@ -220,7 +220,7 @@ export function resolveTeamOsHome(options: LoadTeamOsOptions = {}): {
   const configured = options.configuredHome?.trim();
   const environment = options.environmentHome?.trim();
   const source: TeamOsHomeSource = configured ? 'config' : environment ? 'environment' : 'default';
-  const raw = configured || environment || join(userHome, 'Munder-Difflin', 'team-os');
+  const raw = configured || environment || join(userHome, 'go', 'src', 'team-os');
   const expanded = expandHome(raw, userHome);
   if (!isAbsolute(expanded)) throw new Error('teamOsHome must be an absolute path or start with ~/');
   return { path: resolve(expanded), source };

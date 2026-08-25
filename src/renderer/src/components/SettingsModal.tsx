@@ -963,7 +963,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           <span style={{
                             flex: 1, color: 'var(--cth-ink-900)', wordBreak: 'break-all',
                             fontFamily: 'var(--cth-font-mono, monospace)'
-                          }}>{teamOsHome || '~/Munder-Difflin/team-os'}</span>
+                          }}>{teamOsHome || '~/go/src/team-os'}</span>
                           {teamOsHome && (
                             <PixelButton variant="secondary" size="sm" onClick={() => { void useDefaultTeamOsHome(); }}>
                               {t('teamOs.projects.useDefault')}

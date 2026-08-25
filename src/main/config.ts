@@ -180,7 +180,7 @@ export interface HarnessConfig {
   /** Folder where the harness keeps its own state (agent metadata, logs). */
   harnessHome: string | null;
   /** Read-only personal Team OS contract root. Unset uses
-   *  ~/Munder-Difflin/team-os; MUNDER_TEAM_OS_HOME may override the default. */
+   *  ~/go/src/team-os; MUNDER_TEAM_OS_HOME may override the default. */
   teamOsHome?: string;
   /** Recently-opened hive home folders (most-recent first), surfaced by the
    *  launch-time hive picker. Maintained by writeConfig whenever harnessHome is

@@ -2,12 +2,15 @@
 
 > 本文是 Munder Difflin DIY 版本的架构总览，描述系统当前如何通过真实 Provider Runtime、Hive 协作目录和办公室控制面组成一个本地优先、可观察、可干预、可恢复的多 Agent 角色办公室。Codex 默认走 App Server 原生 Thread/Turn 主链；Gemini、DeepSeek 及 Codex 显式兼容模式继续走 PTY/Hook Bridge。
 
+首次了解整套系统时，先从 [Munder Difflin 系统说明书](00-Munder-Difflin系统说明书.md) 和其中的交互式讲解器开始；本文继续作为 Provider、Hive、Session、角色、消息和恢复机制的精确专题合同。
+
 ## 1. 文档定位
 
 | 项目 | 说明 |
 | --- | --- |
 | 权威范围 | 多 Agent 运行模型、角色化、消息通信、Provider 适配、Session/记忆、控制与恢复机制 |
 | 不负责 | 实施阶段、一次性验证结果、临时运行目录、真实 Session ID、密钥和排查流水 |
+| 统一阅读入口 | [Munder Difflin 系统说明书](00-Munder-Difflin系统说明书.md)；交互页只是该说明书的解释投影 |
 | 产品与架构结论 | 本文第 2～16 节；Codex 原生运行桥的实施记录与 Gate 见 [Codex App Server 原生运行桥升级实施规划](../实施规划/05-Munder-Difflin-Codex-App-Server原生运行桥升级实施规划.md) |
 | 长期运行合同 | [个人长期运行安全与备份恢复设计](02-Munder-Difflin个人长期运行安全与备份恢复设计.md) |
 | 主题视觉合同 | [内置主题视觉与低风险换肤设计](03-Munder-Difflin内置主题视觉与低风险换肤设计.md) |

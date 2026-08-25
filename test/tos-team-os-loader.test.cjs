@@ -82,7 +82,7 @@ test('resolves configured, environment, and default homes without hardcoding a u
     path: '/env/team-os', source: 'environment'
   });
   assert.deepEqual(resolveTeamOsHome({ userHome: '/home/test' }), {
-    path: '/home/test/Munder-Difflin/team-os', source: 'default'
+    path: '/home/test/go/src/team-os', source: 'default'
   });
 });
 
